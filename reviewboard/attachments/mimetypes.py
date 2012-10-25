@@ -1,3 +1,4 @@
+import os
 import mimeparse
 
 from django.contrib.staticfiles.templatetags.staticfiles import static
@@ -5,6 +6,7 @@ from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from djblets.util.templatetags.djblets_images import thumbnail
 from pipeline.storage import default_storage
+from docutils import core, io
 
 
 def score_match(pattern, mimetype):
@@ -96,6 +98,13 @@ class MimetypeHandler(object):
     def for_type(cls, attachment):
         """Returns the handler that is the best fit for provided mimetype."""
         mimetype = mimeparse.parse_mime_type(attachment.mimetype)
+        
+        # Override the mimetype if it is .rst or .RST since
+        # mimeparse interprets these as octet-stream
+        extension = os.path.splitext(attachment.filename)[1]
+        if extension == '.rst' or extension == '.RST':
+            mimetype = (u'text', u'x-rst', {})
+
         score, handler = cls.get_best_handler(mimetype)
         return handler(attachment, mimetype)
 
@@ -145,6 +154,49 @@ class TextMimetype(MimetypeHandler):
 
     def get_thumbnail(self):
         """Returns the first few truncated lines of the file."""
+        height = 4
+        length = 50
+
+        f = self.attachment.file.file
+        preview = escape(f.readline()[:length])
+        for i in range(height - 1):
+            preview = preview + '<br />' + escape(f.readline()[:length])
+        f.close()
+
+        return mark_safe('<pre class="file-thumbnail">%s</pre>'
+                         % preview)
+
+
+class ReStructuredTextMimeType(MimetypeHandler):
+    """Handles ReStructuredText (.rst) mimetypes."""
+    supported_mimetypes = ['text/x-rst']
+
+    def get_thumbnail(self):
+        """Returns the first few truncated lines of the file."""
+
+        f = self.attachment.file.file
+        f_string = escape(f.read())
+        f.close()
+
+        rst_parts = core.publish_parts(f_string, writer_name='html')
+        
+        previewHTML = ('<div class="file-thumbnail">' + 
+                        rst_parts['title'] +
+                        rst_parts['subtitle'] +
+                        rst_parts['body'] +
+                       '</div>')
+
+        return mark_safe(previewHTML)
+    
+
+class MarkDownMimeType(MimetypeHandler):
+    """Handles MarkDown (.md) mimetypes."""
+    supported_mimetypes = ['text/x-markdown']
+
+    def get_thumbnail(self):
+        """MarkDown thumbnail rendered same as text for now"""
+
+        # Note markdown will be rendered in the same way as text for now
         height = 4
         length = 50
 
