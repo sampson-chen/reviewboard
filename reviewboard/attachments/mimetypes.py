@@ -4,10 +4,10 @@ import mimeparse
 from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
-from djblets.util.templatetags.djblets_images import thumbnail
 from pipeline.storage import default_storage
 from docutils import core, io
 
+from djblets.util.templatetags.djblets_images import thumbnail
 
 def score_match(pattern, mimetype):
     """Returns a score for how well the pattern matches the mimetype.
@@ -102,7 +102,7 @@ class MimetypeHandler(object):
         # Override the mimetype if it is .rst or .RST since
         # mimeparse interprets these as octet-stream
         extension = os.path.splitext(attachment.filename)[1]
-        if extension == '.rst' or extension == '.RST':
+        if extension.lower() == '.rst':
             mimetype = (u'text', u'x-rst', {})
 
         score, handler = cls.get_best_handler(mimetype)
