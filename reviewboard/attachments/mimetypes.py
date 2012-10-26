@@ -181,7 +181,7 @@ class ReStructuredTextMimeType(MimetypeHandler):
 
         rst_parts = core.publish_parts(f_string, writer_name='html')
         
-        previewHTML = ('<div class="file-thumbnail">' + 
+        previewHTML = ('<div class="file-thumbnail-clipped">' + 
                         rst_parts['title'] +
                         rst_parts['subtitle'] +
                         rst_parts['body'] +
@@ -201,7 +201,7 @@ class MarkDownMimeType(MimetypeHandler):
         preview = f.read()
         f.close()
 
-        previewHTML = ('<div class="file-thumbnail">' + 
+        previewHTML = ('<div class="file-thumbnail-clipped">' + 
                         markdown.markdown(preview) +
                        '</div>')
 
