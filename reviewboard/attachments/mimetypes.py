@@ -1,11 +1,12 @@
 import os
-import mimeparse
 
 from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from pipeline.storage import default_storage
+import mimeparse
 from docutils import core, io
+import markdown
 
 from djblets.util.templatetags.djblets_images import thumbnail
 
@@ -172,7 +173,7 @@ class ReStructuredTextMimeType(MimetypeHandler):
     supported_mimetypes = ['text/x-rst']
 
     def get_thumbnail(self):
-        """Returns the first few truncated lines of the file."""
+        """Returns portions of the rendered .rst file as html"""
 
         f = self.attachment.file.file
         f_string = escape(f.read())
@@ -194,20 +195,17 @@ class MarkDownMimeType(MimetypeHandler):
     supported_mimetypes = ['text/x-markdown']
 
     def get_thumbnail(self):
-        """MarkDown thumbnail rendered same as text for now"""
-
-        # Note markdown will be rendered in the same way as text for now
-        height = 4
-        length = 50
+        """Returns clipped portion of the start of rendered .md"""
 
         f = self.attachment.file.file
-        preview = escape(f.readline()[:length])
-        for i in range(height - 1):
-            preview = preview + '<br />' + escape(f.readline()[:length])
+        preview = f.read()
         f.close()
 
-        return mark_safe('<pre class="file-thumbnail">%s</pre>'
-                         % preview)
+        previewHTML = ('<div class="file-thumbnail">' + 
+                        markdown.markdown(preview) +
+                       '</div>')
+
+        return mark_safe(previewHTML)
 
 
 # A mapping of mimetypes to icon names.
