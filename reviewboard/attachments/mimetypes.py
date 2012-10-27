@@ -3,12 +3,11 @@ import os
 from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
-from pipeline.storage import default_storage
-import mimeparse
-from docutils import core, io
-import markdown
-
 from djblets.util.templatetags.djblets_images import thumbnail
+from pipeline.storage import default_storage
+import docutils.core
+import markdown
+import mimeparse
 
 def score_match(pattern, mimetype):
     """Returns a score for how well the pattern matches the mimetype.
@@ -103,8 +102,8 @@ class MimetypeHandler(object):
         # Override the mimetype if it is .rst or .RST since
         # mimeparse interprets these as octet-stream
         extension = os.path.splitext(attachment.filename)[1]
-        if extension.lower() == '.rst':
-            mimetype = (u'text', u'x-rst', {})
+        if extension in MIMETYPE_EXTENSIONS:
+            mimetype = MIMETYPE_EXTENSIONS[extension]
 
         score, handler = cls.get_best_handler(mimetype)
         return handler(attachment, mimetype)
@@ -174,20 +173,23 @@ class ReStructuredTextMimeType(MimetypeHandler):
 
     def get_thumbnail(self):
         """Returns portions of the rendered .rst file as html"""
-
         f = self.attachment.file.file
-        f_string = escape(f.read())
+        data_string = f.read()
         f.close()
 
-        rst_parts = core.publish_parts(f_string, writer_name='html')
-        
-        previewHTML = ('<div class="file-thumbnail-clipped">' + 
-                        rst_parts['title'] +
-                        rst_parts['subtitle'] +
-                        rst_parts['body'] +
-                       '</div>')
+        # Cropping the first 20 lines:
+        # Choosing 20 because it should be safe to fill the thumbnail render
+        # area sufficiently, and there's negligible efficiency difference
+        # between 20 vs. 5 lines.
+        data_string = data_string.splitlines()[:20]
+        data = "\n".join(data_string)
 
-        return mark_safe(previewHTML)
+        rst_parts = docutils.core.publish_parts(data, writer_name='html')
+        
+        preview_html = ('<div class="file-thumbnail-clipped">%s</div>'
+                        % rst_parts['html_body'])
+
+        return mark_safe(preview_html)
     
 
 class MarkDownMimeType(MimetypeHandler):
@@ -196,16 +198,21 @@ class MarkDownMimeType(MimetypeHandler):
 
     def get_thumbnail(self):
         """Returns clipped portion of the start of rendered .md"""
-
         f = self.attachment.file.file
-        preview = f.read()
+        data_string = f.read()
         f.close()
 
-        previewHTML = ('<div class="file-thumbnail-clipped">' + 
-                        markdown.markdown(preview) +
-                       '</div>')
+        # Cropping the first 20 lines:
+        # Choosing 20 because it should be safe to fill the thumbnail render
+        # area sufficiently, and there's negligible efficiency difference
+        # between 20 vs. 5 lines.
+        data_string = data_string.splitlines()[:20]
+        data = "\n".join(data_string)
 
-        return mark_safe(previewHTML)
+        preview_html = ('<div class="file-thumbnail-clipped">%s</div>'
+                        % markdown.markdown(data))
+
+        return mark_safe(preview_html)
 
 
 # A mapping of mimetypes to icon names.
@@ -310,4 +317,16 @@ MIMETYPE_ICON_ALIASES = {
     'text/x-vcalendar': 'x-office-calendar',
     'text/x-vcard': 'x-office-address-book',
     'text/x-zsh': 'text-x-script',
+}
+
+# A mapping of extensions to mimetypes
+#
+# Normally mimetypes are determined by mimeparse, then matched with
+# one of the supported mimetypes classes through a best-match algorithm.
+# However, mimeparse isn't always able to catch the unofficial mimetypes
+# such as 'text/x-rst' or 'text/x-markdown', so we just go by the
+# extension name.
+MIMETYPE_EXTENSIONS = {
+    '.rst': (u'text', u'x-rst', {}),
+    '.md': (u'text', u'x-markdown', {}),
 }
