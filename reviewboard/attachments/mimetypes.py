@@ -9,6 +9,7 @@ import docutils.core
 import markdown
 import mimeparse
 
+
 def score_match(pattern, mimetype):
     """Returns a score for how well the pattern matches the mimetype.
 
@@ -99,9 +100,10 @@ class MimetypeHandler(object):
         """Returns the handler that is the best fit for provided mimetype."""
         mimetype = mimeparse.parse_mime_type(attachment.mimetype)
         
-        # Override the mimetype if it is .rst or .RST since
-        # mimeparse interprets these as octet-stream
+        # Override the mimetype if mimeparse is known to misinterpret this
+        # type of file as `octet-stream`
         extension = os.path.splitext(attachment.filename)[1]
+        
         if extension in MIMETYPE_EXTENSIONS:
             mimetype = MIMETYPE_EXTENSIONS[extension]
 
@@ -177,19 +179,19 @@ class ReStructuredTextMimeType(MimetypeHandler):
         data_string = f.read()
         f.close()
 
-        # Cropping the first 20 lines:
-        # Choosing 20 because it should be safe to fill the thumbnail render
+        # Cropping the first 200 lines:
+        # Choosing 200 because it should be safe to fill the thumbnail render
         # area sufficiently, and there's negligible efficiency difference
-        # between 20 vs. 5 lines.
-        data_string = data_string.splitlines()[:20]
-        data = "\n".join(data_string)
+        # between 200 vs. 5 lines.
+        # (This would also avoid problem of truncation leading to ill-formatted
+        # text structures at the start of file being passed to docutil API in
+        # most cases)
+        data = "\n".join(data_string.splitlines()[:200])
 
         rst_parts = docutils.core.publish_parts(data, writer_name='html')
         
-        preview_html = ('<div class="file-thumbnail-clipped">%s</div>'
+        return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
                         % rst_parts['html_body'])
-
-        return mark_safe(preview_html)
     
 
 class MarkDownMimeType(MimetypeHandler):
@@ -202,17 +204,17 @@ class MarkDownMimeType(MimetypeHandler):
         data_string = f.read()
         f.close()
 
-        # Cropping the first 20 lines:
-        # Choosing 20 because it should be safe to fill the thumbnail render
+        # Cropping the first 200 lines:
+        # Choosing 200 because it should be safe to fill the thumbnail render
         # area sufficiently, and there's negligible efficiency difference
-        # between 20 vs. 5 lines.
-        data_string = data_string.splitlines()[:20]
-        data = "\n".join(data_string)
+        # between 200 vs. 5 lines.
+        # (This would also avoid problem of truncation leading to ill-formatted
+        # text structures at the start of file being passed to docutil API in
+        # most cases)
+        data = "\n".join(data_string.splitlines()[:200])
 
-        preview_html = ('<div class="file-thumbnail-clipped">%s</div>'
+        return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
                         % markdown.markdown(data))
-
-        return mark_safe(preview_html)
 
 
 # A mapping of mimetypes to icon names.
@@ -318,6 +320,7 @@ MIMETYPE_ICON_ALIASES = {
     'text/x-vcard': 'x-office-address-book',
     'text/x-zsh': 'text-x-script',
 }
+
 
 # A mapping of extensions to mimetypes
 #
