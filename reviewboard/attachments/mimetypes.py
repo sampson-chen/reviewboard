@@ -171,24 +171,25 @@ class TextMimetype(MimetypeHandler):
 
 class ReStructuredTextMimeType(MimetypeHandler):
     """Handles ReStructuredText (.rst) mimetypes."""
-    supported_mimetypes = ['text/x-rst']
+    supported_mimetypes = ['text/x-rst', 'text/rst']
 
     def get_thumbnail(self):
         """Returns portions of the rendered .rst file as html"""
+
+        # Read up to 'max_chars' number of characters from the file attachment
+        # attachment to prevent long reads caused by malicious or auto-
+        # generated files.
+        # (This is a more flexible and simpler approach than
+        # truncating past a certain number of lines + truncating past
+        # a certain number of chars for each line)
+        max_chars = 2000
+
+        # Open the file and read up to max_chars
         f = self.attachment.file.file
-        data_string = f.read()
+        data_string = f.read(max_chars)
         f.close()
 
-        # Cropping the first 200 lines:
-        # Choosing 200 because it should be safe to fill the thumbnail render
-        # area sufficiently, and there's negligible efficiency difference
-        # between 200 vs. 5 lines.
-        # (This would also avoid problem of truncation leading to ill-formatted
-        # text structures at the start of file being passed to docutil API in
-        # most cases)
-        data = "\n".join(data_string.splitlines()[:200])
-
-        rst_parts = docutils.core.publish_parts(data, writer_name='html')
+        rst_parts = docutils.core.publish_parts(data_string, writer_name='html')
         
         return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
                         % rst_parts['html_body'])
@@ -196,25 +197,26 @@ class ReStructuredTextMimeType(MimetypeHandler):
 
 class MarkDownMimeType(MimetypeHandler):
     """Handles MarkDown (.md) mimetypes."""
-    supported_mimetypes = ['text/x-markdown']
+    supported_mimetypes = ['text/x-markdown', 'text/markdown']
 
     def get_thumbnail(self):
         """Returns clipped portion of the start of rendered .md"""
+
+        # Read up to 'max_chars' number of characters from the file attachment
+        # attachment to prevent long reads caused by malicious or auto-
+        # generated files.
+        # (This is a more flexible and simpler approach than
+        # truncating past a certain number of lines + truncating past
+        # a certain number of chars for each line)
+        max_chars = 2000
+
+        # Open the file and read up to max_chars
         f = self.attachment.file.file
-        data_string = f.read()
+        data_string = f.read(max_chars)
         f.close()
 
-        # Cropping the first 200 lines:
-        # Choosing 200 because it should be safe to fill the thumbnail render
-        # area sufficiently, and there's negligible efficiency difference
-        # between 200 vs. 5 lines.
-        # (This would also avoid problem of truncation leading to ill-formatted
-        # text structures at the start of file being passed to docutil API in
-        # most cases)
-        data = "\n".join(data_string.splitlines()[:200])
-
         return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
-                        % markdown.markdown(data))
+                        % markdown.markdown(data_string))
 
 
 # A mapping of mimetypes to icon names.
