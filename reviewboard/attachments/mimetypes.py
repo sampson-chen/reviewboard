@@ -166,7 +166,7 @@ class TextMimetype(MimetypeHandler):
             preview = escape(f.readline()[:length])
             for i in range(height - 1):
                 preview = preview + '<br />' + escape(f.readline()[:length])
-        except (ValueError, IOError) as e:
+        except (ValueError, IOError), e:
             f.close()
             return mark_safe('<pre class="file-thumbnail">%s</pre>'
                              % "(file is closed)")
@@ -200,7 +200,7 @@ class ReStructuredTextMimeType(MimetypeHandler):
             rst_parts = docutils.core.publish_parts(data_string, writer_name='html')
             return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
                              % rst_parts['html_body'])
-        except (ValueError, IOError) as e:
+        except (ValueError, IOError), e:
             f.close()
             return mark_safe('<pre class="file-thumbnail-clipped">%s</pre>'
                              % "(file is closed)")
