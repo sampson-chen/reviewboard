@@ -1,3 +1,4 @@
+import logging
 import os
 
 from django.contrib.staticfiles.templatetags.staticfiles import static
@@ -154,104 +155,76 @@ class ImageMimetype(MimetypeHandler):
 class TextMimetype(MimetypeHandler):
     """Handles text mimetypes."""
     supported_mimetypes = ['text/*']
+    FILE_CROP_CHAR_LIMIT = 2000
 
-    def get_thumbnail(self):
+    def generate_cache_key(self):
+        """Generates a unique key based on MimeType class & attachment's pk"""
+        return ('file-attachment-thumbnail-%s-html-%s'
+                % (self.__class__.__name__, self.attachment.pk)
+
+    def generate_html_from_raw_text(self, data_string):
         """Returns the first few truncated lines of the file."""
         height = 4
         length = 50
 
+        preview_lines = data_string.split('\n')[:height]
+
+        for i in range(height):
+            preview_lines[i] = escape(preview_lines[i][:length])
+
+        preview = '<br />'.join(preview_lines)
+        return preview
+
+    def generate_thumbnail(self):
+        """Returns the HTML for a thumbnail preview for a text file."""
+        # Read up to 'FILE_CROP_CHAR_LIMIT' number of characters from
+        # the file attachment to prevent long reads caused by malicious
+        # or auto-generated files.
+        # (This is a more flexible and simpler approach than
+        # truncating past a certain number of lines + truncating past
+        # a certain number of chars for each line)
         f = self.attachment.file.file
 
+        # Enclosure in try-except block in case the read fails
+        data_string = ""
         try:
-            preview = escape(f.readline()[:length])
-            for i in range(height - 1):
-                preview = preview + '<br />' + escape(f.readline()[:length])
+            data_string = f.read(self.FILE_CROP_CHAR_LIMIT)
         except (ValueError, IOError), e:
-            f.close()
-            return mark_safe('<pre class="file-thumbnail">%s</pre>'
-                             % "(file is closed)")
+            logging.error("Failed to read from file attachment: pk=%s; %s",
+                          str(self.attachment.pk), e)
+            raise
 
         f.close()
+        return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
+                         % self.generate_html_from_raw_text(data_string))
 
-        return mark_safe('<pre class="file-thumbnail">%s</pre>'
-                         % preview)
+    def get_thumbnail(self):
+        """Returns the thumbnail of text file as rendered as html"""
+        # Caches the generated thumbnail to eliminate the need on each page
+        # reload to:
+        # 1) re-read the file attachment
+        # 2) re-generate the html based on the data read
+        return cache_memoize(self.generate_cache_key(),
+                             lambda: self.generate_thumbnail())
 
 
-class ReStructuredTextMimeType(MimetypeHandler):
+class ReStructuredTextMimeType(TextMimetype):
     """Handles ReStructuredText (.rst) mimetypes."""
     supported_mimetypes = ['text/x-rst', 'text/rst']
-    FILE_CROP_CHAR_LIMIT = 2000
 
-    def generate_thumbnail(self):
-        """Actual logic for generating the thumbnail from raw text"""
-        # Read up to 'FILE_CROP_CHAR_LIMIT' number of characters from
-        # the file attachment to prevent long reads caused by malicious
-        # or auto-generated files.
-        # (This is a more flexible and simpler approach than
-        # truncating past a certain number of lines + truncating past
-        # a certain number of chars for each line)
-        f = self.attachment.file.file
+    def generate_html_from_raw_text(self, data_string):
+        """Returns html of the ReST file as produced by docutils."""
+        rst_parts = docutils.core.publish_parts(data_string, writer_name='html')
+        return rst_parts['html_body']
 
-        # Enclosure in try-except block in case the read fails
-        try:
-            # Read up to FILE_CROP_CHAR_LIMIT
-            data_string = f.read(ReStructuredTextMimeType.FILE_CROP_CHAR_LIMIT)
-            f.close()
-            rst_parts = docutils.core.publish_parts(data_string, writer_name='html')
-            return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
-                             % rst_parts['html_body'])
-        except (ValueError, IOError), e:
-            f.close()
-            return mark_safe('<pre class="file-thumbnail-clipped">%s</pre>'
-                             % "(file is closed)")
 
-    def get_thumbnail(self):
-        """Returns clipped portions of the rendered .rst file as html"""
-        # Caches the generated thumbnail to eliminate the need on each page
-        # reload to:
-        # 1) re-read the file attachment
-        # 2) re-generate the html based on the data read
-        return cache_memoize('file-attachment-thumbnail-text-rst-html-%s'
-                             % self.attachment.pk,
-                             lambda: self.generate_thumbnail())
-    
-
-class MarkDownMimeType(MimetypeHandler):
+class MarkDownMimeType(TextMimetype):
     """Handles MarkDown (.md) mimetypes."""
     supported_mimetypes = ['text/x-markdown', 'text/markdown']
-    FILE_CROP_CHAR_LIMIT = 2000
 
-    def generate_thumbnail(self):
-        """Actual logic for generating the thumbnail from raw text"""
-        # Read up to 'FILE_CROP_CHAR_LIMIT' number of characters from
-        # the file attachment to prevent long reads caused by malicious
-        # or auto-generated files.
-        # (This is a more flexible and simpler approach than
-        # truncating past a certain number of lines + truncating past
-        # a certain number of chars for each line)
-        f = self.attachment.file.file
-
-        # Enclosure in try-except block in case the read fails
-        try:
-            # Read up to FILE_CROP_CHAR_LIMIT
-            data_string = f.read(MarkDownMimeType.FILE_CROP_CHAR_LIMIT)
-            f.close()
-            return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
-                             % markdown.markdown(data_string))
-        except (ValueError, IOError), e:
-            f.close()
-            return mark_safe('<pre class="file-thumbnail-clipped">%s</pre>'
-                             % "(file is closed)")
-
-    def get_thumbnail(self):
-        """Returns clipped portion of the start of rendered .md file as html"""
-        # Caches the generated thumbnail to eliminate the need on each page
-        # reload to:
-        # 1) re-read the file attachment
-        # 2) re-generate the html based on the data read
-        return cache_memoize('file-attachment-thumbnail-text-md-html-%s'
-                             % self.attachment.pk,
-                             lambda: self.generate_thumbnail())
+    def generate_html_from_raw_text(self, data_string):
+        """Returns html of the MarkDown file as produced by markdown."""
+        return markdown.markdown(data_string)
 
 
 # A mapping of mimetypes to icon names.
