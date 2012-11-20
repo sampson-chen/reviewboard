@@ -2381,6 +2381,20 @@ class ReviewRequestResourceTests(BaseWebAPITestCase):
         # unit tests.
         return ReviewRequest.objects.get(pk=rsp['review_request']['id'])
 
+    def test_post_reviewrequests_with_no_repository(self):
+        """Testing the POST review-requests/ API with no repository"""
+        rsp = self.apiPost(self.get_list_url(),
+                           expected_mimetype=self.item_mimetype)
+        self.assertEqual(rsp['stat'], 'ok')
+
+        self.assertFalse('repository' in rsp['review_request']['links'])
+
+        # See if we can fetch this. Also return it for use in other
+        # unit tests.
+        review_request = ReviewRequest.objects.get(
+            pk=rsp['review_request']['id'])
+        self.assertEqual(review_request.repository, None)
+
     @add_fixtures(['test_site'])
     def test_post_reviewrequests_with_site(self):
         """Testing the POST review-requests/ API with a local site"""
@@ -6488,9 +6502,10 @@ class FileAttachmentCommentResourceTests(BaseWebAPITestCase):
         """Testing the POST review-requests/<id>/file-attachments/<id>/comments/ API with extra fields"""
         comment_text = "This is a test comment."
         extra_fields = {
-            'foo': '123',
-            'bar': '456',
-            'baz': '',
+            'extra_data.foo': '123',
+            'extra_data.bar': '456',
+            'extra_data.baz': '',
+            'ignored': 'foo',
         }
 
         rsp = self._postNewReviewRequest()
@@ -6524,16 +6539,20 @@ class FileAttachmentCommentResourceTests(BaseWebAPITestCase):
         self.assertTrue('foo' in comment.extra_data)
         self.assertTrue('bar' in comment.extra_data)
         self.assertFalse('baz' in comment.extra_data)
-        self.assertEqual(comment.extra_data['foo'], extra_fields['foo'])
-        self.assertEqual(comment.extra_data['bar'], extra_fields['bar'])
+        self.assertFalse('ignored' in comment.extra_data)
+        self.assertEqual(comment.extra_data['foo'],
+                         extra_fields['extra_data.foo'])
+        self.assertEqual(comment.extra_data['bar'],
+                         extra_fields['extra_data.bar'])
 
         return rsp
 
     def test_put_file_attachment_comments_with_extra_fields(self):
         """Testing the PUT review-requests/<id>/file-attachments/<id>/comments/<id>/ API with extra fields"""
         extra_fields = {
-            'foo': 'abc',
-            'bar': '',
+            'extra_data.foo': 'abc',
+            'extra_data.bar': '',
+            'ignored': 'foo',
         }
 
         rsp = self.test_post_file_attachment_comments_with_extra_fields()
@@ -6549,8 +6568,10 @@ class FileAttachmentCommentResourceTests(BaseWebAPITestCase):
 
         self.assertTrue('foo' in comment.extra_data)
         self.assertFalse('bar' in comment.extra_data)
+        self.assertFalse('ignored' in comment.extra_data)
         self.assertEqual(len(comment.extra_data.keys()), 1)
-        self.assertEqual(comment.extra_data['foo'], extra_fields['foo'])
+        self.assertEqual(comment.extra_data['foo'],
+                         extra_fields['extra_data.foo'])
 
 
 class DraftReviewFileAttachmentCommentResourceTests(BaseWebAPITestCase):
