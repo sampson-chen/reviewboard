@@ -12,6 +12,42 @@ import markdown
 import mimeparse
 
 
+_registered_mimetype_handlers = []
+
+
+def register_mimetype_handler(handler):
+    """Registers a MimetypeHandler class.
+
+    This will register a Mimetype Handler used by Review Board to render
+    thumbnails for the file attachements across different mimetypes.
+
+    Only MimetypeHandler subclasses are supported.
+    """
+    if not issubclass(handler, MimetypeHandler):
+        raise TypeError('Only MimetypeHandler subclasses can be registered')
+
+    _registered_mimetype_handlers.append(handler)
+
+
+def unregister_mimetype_handler(handler):
+    """Unregisters a MimetypeHandler class.
+
+    This will unregister a previously registered mimetype handler.
+
+    Only MimetypeHandler subclasses are supported. The class must ahve been
+    registered beforehand or a ValueError will be thrown.
+    """
+    if not issubclass(handler, MimetypeHandler):
+        raise TypeError('Only MimetypeHandler subclasses can be unregistered')
+
+    try:
+        _registered_mimetype_handlers.remove(handler)
+    except ValueError:
+        logging.error('Failed to unregister missing mimetype handler %r' %
+                      handler)
+        raise ValueError('This mimetype handler was not previously registered')
+
+
 def score_match(pattern, mimetype):
     """Returns a score for how well the pattern matches the mimetype.
 
@@ -78,22 +114,18 @@ class MimetypeHandler(object):
     @classmethod
     def get_best_handler(cls, mimetype):
         """Returns the handler and score that that best fit the mimetype."""
-        best_score, best_fit = (0, cls)
+        best_score, best_fit = (0, None)
 
-        for mt in cls.supported_mimetypes:
-            try:
-                score = score_match(mimeparse.parse_mime_type(mt), mimetype)
+        for mimetype_handler in _registered_mimetype_handlers:
+            for mt in mimetype_handler.supported_mimetypes:
+                try:
+                    score = score_match(mimeparse.parse_mime_type(mt),
+                                        mimetype)
 
-                if score > best_score:
-                    best_score, best_fit = (score, cls)
-            except ValueError:
-                continue
-
-        for handler in cls.__subclasses__():
-            score, best_handler = handler.get_best_handler(mimetype)
-
-            if score > best_score:
-                best_score, best_fit = (score, best_handler)
+                    if score > best_score:
+                        best_score, best_fit = (score, mimetype_handler)
+                except ValueError:
+                    continue
 
         return (best_score, best_fit)
 
@@ -110,7 +142,15 @@ class MimetypeHandler(object):
             mimetype = MIMETYPE_EXTENSIONS[extension]
 
         score, handler = cls.get_best_handler(mimetype)
-        return handler(attachment, mimetype)
+
+        if handler:
+            try:
+                return handler(attachment, mimetype)
+            except Exception, e:
+                logging.error('Unable to load MimeType Handler for %s: %s',
+                              attachment, e, exc_info=1)
+
+        return None
 
     def get_icon_url(self):
         mimetype_string = self.mimetype[0] + '/' + self.mimetype[1]
@@ -155,21 +195,25 @@ class ImageMimetype(MimetypeHandler):
 class TextMimetype(MimetypeHandler):
     """Handles text mimetypes."""
     supported_mimetypes = ['text/*']
+
+    # Read up to 'FILE_CROP_CHAR_LIMIT' number of characters from
+    # the file attachment to prevent long reads caused by malicious
+    # or auto-generated files.
     FILE_CROP_CHAR_LIMIT = 2000
 
     def generate_cache_key(self):
         """Generates a unique key based on MimeType class & attachment's pk"""
         return ('file-attachment-thumbnail-%s-html-%s'
-                % (self.__class__.__name__, self.attachment.pk)
+                % (self.__class__.__name__, self.attachment.pk))
 
     def generate_html_from_raw_text(self, data_string):
-        """Returns the first few truncated lines of the file."""
+        """Returns the first few truncated lines of the text file."""
         height = 4
         length = 50
 
         preview_lines = data_string.split('\n')[:height]
 
-        for i in range(height):
+        for i in range(min(height, len(preview_lines))):
             preview_lines[i] = escape(preview_lines[i][:length])
 
         preview = '<br />'.join(preview_lines)
@@ -177,16 +221,9 @@ class TextMimetype(MimetypeHandler):
 
     def generate_thumbnail(self):
         """Returns the HTML for a thumbnail preview for a text file."""
-        # Read up to 'FILE_CROP_CHAR_LIMIT' number of characters from
-        # the file attachment to prevent long reads caused by malicious
-        # or auto-generated files.
-        # (This is a more flexible and simpler approach than
-        # truncating past a certain number of lines + truncating past
-        # a certain number of chars for each line)
         f = self.attachment.file.file
 
         # Enclosure in try-except block in case the read fails
-        data_string = ""
         try:
             data_string = f.read(self.FILE_CROP_CHAR_LIMIT)
         except (ValueError, IOError), e:
@@ -199,7 +236,7 @@ class TextMimetype(MimetypeHandler):
                          % self.generate_html_from_raw_text(data_string))
 
     def get_thumbnail(self):
-        """Returns the thumbnail of text file as rendered as html"""
+        """Returns the thumbnail of the text file as rendered as html"""
         # Caches the generated thumbnail to eliminate the need on each page
         # reload to:
         # 1) re-read the file attachment
