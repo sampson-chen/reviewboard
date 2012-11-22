@@ -147,7 +147,7 @@ class MimetypeHandler(object):
             try:
                 return handler(attachment, mimetype)
             except Exception, e:
-                logging.error('Unable to load MimeType Handler for %s: %s',
+                logging.error('Unable to load Mimetype Handler for %s: %s',
                               attachment, e, exc_info=1)
 
         return None
@@ -200,26 +200,20 @@ class TextMimetype(MimetypeHandler):
     # the file attachment to prevent long reads caused by malicious
     # or auto-generated files.
     FILE_CROP_CHAR_LIMIT = 2000
+    TEXT_CROP_HEIGHT = 4
+    TEXT_CROP_LENGTH = 50
 
-    def generate_cache_key(self):
-        """Generates a unique key based on MimeType class & attachment's pk"""
-        return ('file-attachment-thumbnail-%s-html-%s'
-                % (self.__class__.__name__, self.attachment.pk))
-
-    def generate_html_from_raw_text(self, data_string):
+    def _generate_preview_html(self, data_string):
         """Returns the first few truncated lines of the text file."""
-        height = 4
-        length = 50
 
-        preview_lines = data_string.split('\n')[:height]
+        preview_lines = data_string.splitlines()[:self.TEXT_CROP_HEIGHT]
 
-        for i in range(min(height, len(preview_lines))):
-            preview_lines[i] = escape(preview_lines[i][:length])
+        for i in range(min(self.TEXT_CROP_HEIGHT, len(preview_lines))):
+            preview_lines[i] = escape(preview_lines[i][:self.TEXT_CROP_LENGTH])
 
-        preview = '<br />'.join(preview_lines)
-        return preview
+        return '<br />'.join(preview_lines)
 
-    def generate_thumbnail(self):
+    def _generate_thumbnail(self):
         """Returns the HTML for a thumbnail preview for a text file."""
         f = self.attachment.file.file
 
@@ -233,7 +227,7 @@ class TextMimetype(MimetypeHandler):
 
         f.close()
         return mark_safe('<div class="file-thumbnail-clipped">%s</div>'
-                         % self.generate_html_from_raw_text(data_string))
+                         % self._generate_preview_html(data_string))
 
     def get_thumbnail(self):
         """Returns the thumbnail of the text file as rendered as html"""
@@ -241,25 +235,26 @@ class TextMimetype(MimetypeHandler):
         # reload to:
         # 1) re-read the file attachment
         # 2) re-generate the html based on the data read
-        return cache_memoize(self.generate_cache_key(),
-                             lambda: self.generate_thumbnail())
+        return cache_memoize('file-attachment-thumbnail-%s-html-%s'
+                             % (self.__class__.__name__, self.attachment.pk),
+                             lambda: self._generate_thumbnail())
 
 
-class ReStructuredTextMimeType(TextMimetype):
+class ReStructuredTextMimetype(TextMimetype):
     """Handles ReStructuredText (.rst) mimetypes."""
     supported_mimetypes = ['text/x-rst', 'text/rst']
 
-    def generate_html_from_raw_text(self, data_string):
+    def _generate_preview_html(self, data_string):
         """Returns html of the ReST file as produced by docutils."""
         rst_parts = docutils.core.publish_parts(data_string, writer_name='html')
         return rst_parts['html_body']
 
 
-class MarkDownMimeType(TextMimetype):
+class MarkDownMimetype(TextMimetype):
     """Handles MarkDown (.md) mimetypes."""
     supported_mimetypes = ['text/x-markdown', 'text/markdown']
 
-    def generate_html_from_raw_text(self, data_string):
+    def _generate_preview_html(self, data_string):
         """Returns html of the MarkDown file as produced by markdown."""
         return markdown.markdown(data_string)
 
