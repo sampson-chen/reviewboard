@@ -133,11 +133,11 @@ class MimetypeHandler(object):
     def for_type(cls, attachment):
         """Returns the handler that is the best fit for provided mimetype."""
         mimetype = mimeparse.parse_mime_type(attachment.mimetype)
-        
+
         # Override the mimetype if mimeparse is known to misinterpret this
         # type of file as `octet-stream`
         extension = os.path.splitext(attachment.filename)[1]
-        
+
         if extension in MIMETYPE_EXTENSIONS:
             mimetype = MIMETYPE_EXTENSIONS[extension]
 
@@ -246,8 +246,8 @@ class ReStructuredTextMimetype(TextMimetype):
 
     def _generate_preview_html(self, data_string):
         """Returns html of the ReST file as produced by docutils."""
-        rst_parts = docutils.core.publish_parts(data_string, writer_name='html')
-        return rst_parts['html_body']
+        return docutils.core.publish_parts(data_string,
+                                           writer_name='html')['html_body']
 
 
 class MarkDownMimetype(TextMimetype):
