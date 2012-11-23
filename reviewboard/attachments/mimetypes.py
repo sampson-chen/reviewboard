@@ -218,7 +218,8 @@ class TextMimetype(MimetypeHandler):
     def _generate_thumbnail(self):
         """Returns the HTML for a thumbnail preview for a text file."""
         f = self.attachment.file.file
-
+        f.open()
+        
         # Enclosure in try-except block in case the read fails
         try:
             data_string = f.read(self.FILE_CROP_CHAR_LIMIT)
