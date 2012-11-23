@@ -357,3 +357,8 @@ elif DEBUG:
 
 # Packages to unit test
 TEST_PACKAGES = ['reviewboard']
+
+# Settings when handling ReStructuredText with Docutils:
+RESTRUCTUREDTEXT_FILTER_SETTINGS = {'file_insertion_enabled': 0,
+                                    'raw_enabled': 0,
+                                    '_disable_config': 1}

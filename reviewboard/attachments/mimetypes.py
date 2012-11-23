@@ -11,6 +11,8 @@ import docutils.core
 import markdown
 import mimeparse
 
+from reviewboard.settings import RESTRUCTUREDTEXT_FILTER_SETTINGS
+
 
 _registered_mimetype_handlers = []
 
@@ -246,8 +248,11 @@ class ReStructuredTextMimetype(TextMimetype):
 
     def _generate_preview_html(self, data_string):
         """Returns html of the ReST file as produced by docutils."""
-        return docutils.core.publish_parts(data_string,
-                                           writer_name='html')['html_body']
+        # Use safe filtering against injection attacks
+        return docutils.core.publish_parts(data_string, writer_name='html',
+                                           settings_overrides=\
+                                           RESTRUCTUREDTEXT_FILTER_SETTINGS)\
+                                           ['html_body']
 
 
 class MarkDownMimetype(TextMimetype):
@@ -256,7 +261,9 @@ class MarkDownMimetype(TextMimetype):
 
     def _generate_preview_html(self, data_string):
         """Returns html of the MarkDown file as produced by markdown."""
-        return markdown.markdown(data_string)
+        # Use safe filtering against injection attacks
+        return markdown.markdown(data_string, safe_mode='escape',
+                                 enable_attributes=False)
 
 
 # A mapping of mimetypes to icon names.
