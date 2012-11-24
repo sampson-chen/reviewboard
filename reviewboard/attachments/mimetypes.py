@@ -1,8 +1,10 @@
 import logging
 import os
 
+from django.conf import settings
 from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.utils.html import escape
+from django.utils.encoding import smart_str, force_unicode
 from django.utils.safestring import mark_safe
 from djblets.util.misc import cache_memoize
 from djblets.util.templatetags.djblets_images import thumbnail
@@ -10,8 +12,6 @@ from pipeline.storage import default_storage
 import docutils.core
 import markdown
 import mimeparse
-
-from reviewboard.settings import RESTRUCTUREDTEXT_FILTER_SETTINGS
 
 
 _registered_mimetype_handlers = []
@@ -202,16 +202,16 @@ class TextMimetype(MimetypeHandler):
     # the file attachment to prevent long reads caused by malicious
     # or auto-generated files.
     FILE_CROP_CHAR_LIMIT = 2000
-    TEXT_CROP_HEIGHT = 4
-    TEXT_CROP_LENGTH = 50
+    TEXT_CROP_NUM_HEIGHT = 4
+    TEXT_CROP_NUM_LENGTH = 50
 
     def _generate_preview_html(self, data_string):
         """Returns the first few truncated lines of the text file."""
 
-        preview_lines = data_string.splitlines()[:self.TEXT_CROP_HEIGHT]
+        preview_lines = data_string.splitlines()[:self.TEXT_CROP_NUM_HEIGHT]
 
-        for i in range(min(self.TEXT_CROP_HEIGHT, len(preview_lines))):
-            preview_lines[i] = escape(preview_lines[i][:self.TEXT_CROP_LENGTH])
+        for i in range(min(self.TEXT_CROP_NUM_HEIGHT, len(preview_lines))):
+            preview_lines[i] = escape(preview_lines[i][:self.TEXT_CROP_NUM_LENGTH])
 
         return '<br />'.join(preview_lines)
 
@@ -219,13 +219,12 @@ class TextMimetype(MimetypeHandler):
         """Returns the HTML for a thumbnail preview for a text file."""
         f = self.attachment.file.file
         f.open()
-        
-        # Enclosure in try-except block in case the read fails
+
         try:
             data_string = f.read(self.FILE_CROP_CHAR_LIMIT)
         except (ValueError, IOError), e:
-            logging.error("Failed to read from file attachment: pk=%s; %s",
-                          str(self.attachment.pk), e)
+            logging.error('Failed to read from file attachment %s: %s'
+                          % (self.attachment.pk, e))
             raise
 
         f.close()
@@ -240,7 +239,7 @@ class TextMimetype(MimetypeHandler):
         # 2) re-generate the html based on the data read
         return cache_memoize('file-attachment-thumbnail-%s-html-%s'
                              % (self.__class__.__name__, self.attachment.pk),
-                             lambda: self._generate_thumbnail())
+                             self._generate_thumbnail)
 
 
 class ReStructuredTextMimetype(TextMimetype):
@@ -250,10 +249,11 @@ class ReStructuredTextMimetype(TextMimetype):
     def _generate_preview_html(self, data_string):
         """Returns html of the ReST file as produced by docutils."""
         # Use safe filtering against injection attacks
-        return docutils.core.publish_parts(data_string, writer_name='html',
-                                           settings_overrides=\
-                                           RESTRUCTUREDTEXT_FILTER_SETTINGS)\
-                                           ['html_body']
+        safe_docutil_settings = getattr(settings,
+                                        "RESTRUCTUREDTEXT_FILTER_SETTINGS", {})
+        return docutils.core.publish_parts(
+            source=smart_str(data_string), writer_name='html4css1',
+            settings_overrides=safe_docutil_settings )['html_body']
 
 
 class MarkDownMimetype(TextMimetype):
@@ -263,8 +263,32 @@ class MarkDownMimetype(TextMimetype):
     def _generate_preview_html(self, data_string):
         """Returns html of the MarkDown file as produced by markdown."""
         # Use safe filtering against injection attacks
-        return markdown.markdown(data_string, safe_mode='escape',
-                                 enable_attributes=False)
+        # But first, do a version check for markdown module
+        # This is similar the markdown version check done in 
+        # django.contrib.markup (deprecated in Django 1.5)
+        if hasattr(markdown, 'version'):
+            python_markdown_deprecation = (
+                "The use of Python-Markdown < 2.1 in Django is deprecated; "
+                "please update to the current version")
+            markdown_version = getattr(markdown, "version_info", None)
+            if markdown_version < (1,7):
+                logging.warning(python_markdown_deprecation,
+                                DeprecationWarning)
+                return force_unicode(
+                    markdown.markdown(smart_str(data_string), safe_mode=True))
+            else:
+                if  markdown_version >= (2,1):
+                    return markdown.markdown(
+                        force_unicode(data_string), safe_mode='escape',
+                        enable_attributes=False)
+                else:
+                    logging.warning(python_markdown_deprecation,
+                                    DeprecationWarning)
+                    return markdown.markdown(
+                        force_unicode(data_string), safe_mode=True)
+        else:
+            logging.warning(python_markdown_deprecation, DeprecationWarning)
+            return force_unicode(markdown.markdown(smart_str(data_string)))
 
 
 # A mapping of mimetypes to icon names.
@@ -372,7 +396,7 @@ MIMETYPE_ICON_ALIASES = {
 }
 
 
-# A mapping of extensions to mimetypes
+# A mapping of file extensions to mimetypes
 #
 # Normally mimetypes are determined by mimeparse, then matched with
 # one of the supported mimetypes classes through a best-match algorithm.
