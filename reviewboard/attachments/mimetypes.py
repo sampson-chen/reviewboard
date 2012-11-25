@@ -245,15 +245,19 @@ class TextMimetype(MimetypeHandler):
 class ReStructuredTextMimetype(TextMimetype):
     """Handles ReStructuredText (.rst) mimetypes."""
     supported_mimetypes = ['text/x-rst', 'text/rst']
+    RESTRUCTUREDTEXT_FILTER_SETTINGS = {
+        'file_insertion_enabled': 0,
+        'raw_enabled': 0,
+        '_disable_config': 1
+    } 
 
     def _generate_preview_html(self, data_string):
         """Returns html of the ReST file as produced by docutils."""
         # Use safe filtering against injection attacks
-        safe_docutil_settings = getattr(settings,
-                                        "RESTRUCTUREDTEXT_FILTER_SETTINGS", {})
         return docutils.core.publish_parts(
             source=smart_str(data_string), writer_name='html4css1',
-            settings_overrides=safe_docutil_settings )['html_body']
+            settings_overrides=
+            self.RESTRUCTUREDTEXT_FILTER_SETTINGS)['html_body']
 
 
 class MarkDownMimetype(TextMimetype):
@@ -263,32 +267,9 @@ class MarkDownMimetype(TextMimetype):
     def _generate_preview_html(self, data_string):
         """Returns html of the MarkDown file as produced by markdown."""
         # Use safe filtering against injection attacks
-        # But first, do a version check for markdown module
-        # This is similar the markdown version check done in 
-        # django.contrib.markup (deprecated in Django 1.5)
-        if hasattr(markdown, 'version'):
-            python_markdown_deprecation = (
-                "The use of Python-Markdown < 2.1 in Django is deprecated; "
-                "please update to the current version")
-            markdown_version = getattr(markdown, "version_info", None)
-            if markdown_version < (1,7):
-                logging.warning(python_markdown_deprecation,
-                                DeprecationWarning)
-                return force_unicode(
-                    markdown.markdown(smart_str(data_string), safe_mode=True))
-            else:
-                if  markdown_version >= (2,1):
-                    return markdown.markdown(
-                        force_unicode(data_string), safe_mode='escape',
-                        enable_attributes=False)
-                else:
-                    logging.warning(python_markdown_deprecation,
-                                    DeprecationWarning)
-                    return markdown.markdown(
-                        force_unicode(data_string), safe_mode=True)
-        else:
-            logging.warning(python_markdown_deprecation, DeprecationWarning)
-            return force_unicode(markdown.markdown(smart_str(data_string)))
+        return markdown.markdown(
+            force_unicode(data_string), safe_mode='escape',
+            enable_attributes=False)
 
 
 # A mapping of mimetypes to icon names.

@@ -161,14 +161,7 @@ RB_EXTRA_APPS = []
 
 WEB_API_ENCODERS = (
     'djblets.webapi.encoders.ResourceAPIEncoder',
-)
-
-# Settings when handling ReStructuredText with Docutils:
-RESTRUCTUREDTEXT_FILTER_SETTINGS = {
-    'file_insertion_enabled': 0,
-    'raw_enabled': 0,
-    '_disable_config': 1
-}    
+)   
 
 SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
 
