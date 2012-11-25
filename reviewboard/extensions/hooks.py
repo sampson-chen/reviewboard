@@ -54,6 +54,24 @@ class ReviewRequestDetailHook(ExtensionHook):
         return False
 
 
+class ReviewUIHook(ExtensionHook):
+    """A hook to allow extensions to integrate their Review UIs into RB"""
+    __metaclass__ = ExtensionHookPoint
+
+    def __init__(self, extension, review_uis):
+        super(ReviewUIHook, self).__init__(extension)
+        this.review_uis = review_uis
+
+        for review_ui in this.review_uis:
+            register_ui(review_ui)
+
+    def shutdown(self):
+        super(ReviewUIHook, self).shutdown()
+        
+        for review_ui in this.review_uis:
+            unregister_ui(review_ui)
+
+
 class ActionHook(ExtensionHook):
     """A hook for adding actions to a review request.
 
