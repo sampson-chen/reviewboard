@@ -250,9 +250,9 @@ class ReStructuredTextMimetype(TextMimetype):
         """Returns html of the ReST file as produced by docutils."""
         # Use safe filtering against injection attacks
         settings = {
-            'file_insertion_enabled': 0,
-            'raw_enabled': 0,
-            '_disable_config': 1
+            'file_insertion_enabled': False,
+            'raw_enabled': False,
+            '_disable_config': True
         } 
         return docutils.core.publish_parts(
             source=smart_str(data_string),
