@@ -245,19 +245,19 @@ class TextMimetype(MimetypeHandler):
 class ReStructuredTextMimetype(TextMimetype):
     """Handles ReStructuredText (.rst) mimetypes."""
     supported_mimetypes = ['text/x-rst', 'text/rst']
-    RESTRUCTUREDTEXT_FILTER_SETTINGS = {
-        'file_insertion_enabled': 0,
-        'raw_enabled': 0,
-        '_disable_config': 1
-    } 
 
     def _generate_preview_html(self, data_string):
         """Returns html of the ReST file as produced by docutils."""
         # Use safe filtering against injection attacks
+        settings = {
+            'file_insertion_enabled': 0,
+            'raw_enabled': 0,
+            '_disable_config': 1
+        } 
         return docutils.core.publish_parts(
-            source=smart_str(data_string), writer_name='html4css1',
-            settings_overrides=
-            self.RESTRUCTUREDTEXT_FILTER_SETTINGS)['html_body']
+            source=smart_str(data_string),
+            writer_name='html4css1',
+            settings_overrides=settings)['html_body']
 
 
 class MarkDownMimetype(TextMimetype):
