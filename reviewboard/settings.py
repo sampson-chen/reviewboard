@@ -161,7 +161,7 @@ RB_EXTRA_APPS = []
 
 WEB_API_ENCODERS = (
     'djblets.webapi.encoders.ResourceAPIEncoder',
-)   
+)
 
 SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
 
