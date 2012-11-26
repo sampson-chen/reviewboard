@@ -1,6 +1,8 @@
 from djblets.extensions.base import ExtensionHook, ExtensionHookPoint
 import djblets.extensions.hooks as djblets_hooks
 
+from reviewboard.reviews.ui.base import register_ui, unregister_ui
+
 
 class DashboardHook(ExtensionHook):
     __metaclass__ = ExtensionHookPoint
@@ -60,15 +62,15 @@ class ReviewUIHook(ExtensionHook):
 
     def __init__(self, extension, review_uis):
         super(ReviewUIHook, self).__init__(extension)
-        this.review_uis = review_uis
+        self.review_uis = review_uis
 
-        for review_ui in this.review_uis:
+        for review_ui in self.review_uis:
             register_ui(review_ui)
 
     def shutdown(self):
         super(ReviewUIHook, self).shutdown()
         
-        for review_ui in this.review_uis:
+        for review_ui in self.review_uis:
             unregister_ui(review_ui)
 
 
