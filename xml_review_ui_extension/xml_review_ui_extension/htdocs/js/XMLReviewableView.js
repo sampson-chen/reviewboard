@@ -1,5 +1,3 @@
-alert("View Loading!");
-
 /*
  * Displays a review UI for XML files.
  */
@@ -15,5 +13,3 @@ RB.XMLReviewableView = RB.AbstractReviewableView.extend({
         return this;
     }
 });
-alert("View Loading!");
-
