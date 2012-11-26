@@ -1,3 +1,4 @@
+import httplib
 import logging
 import urllib2
 
@@ -7,7 +8,8 @@ from django.utils import simplejson
 from django.utils.translation import ugettext_lazy as _
 from djblets.siteconfig.models import SiteConfiguration
 
-from reviewboard.hostingsvcs.errors import AuthorizationError
+from reviewboard.hostingsvcs.errors import AuthorizationError, \
+                                           SSHKeyAssociationError
 from reviewboard.hostingsvcs.forms import HostingServiceForm
 from reviewboard.hostingsvcs.service import HostingService
 from reviewboard.scmtools.errors import FileNotFoundError
@@ -146,6 +148,7 @@ class GitHub(HostingService):
     needs_authorization = True
     supports_repositories = True
     supports_bug_trackers = True
+    supports_ssh_key_association = True
     supported_scmtools = ['Git']
 
     API_URL = 'https://api.github.com/'
@@ -215,6 +218,95 @@ class GitHub(HostingService):
             return True
         except (urllib2.URLError, urllib2.HTTPError):
             return False
+
+    def is_ssh_key_associated(self, repository, key):
+        if not key:
+            return False
+
+        formatted_key = self._format_public_key(key)
+
+        # The key might be a deploy key (associated with a repository) or a
+        # user key (associated with the currently authorized user account),
+        # so check both.
+        deploy_keys_url = self._build_api_url(repository, 'keys')
+        user_keys_url = ('%suser/keys?access_token=%s'
+                         % (self.API_URL,
+                            self.account.data['authorization']['token']))
+
+        for url in (deploy_keys_url, user_keys_url):
+            keys_resp = self._key_association_api_call(self._json_get, url)
+
+            keys = [
+                item['key']
+                for item in keys_resp
+                if 'key' in item
+            ]
+
+            if formatted_key in keys:
+                return True
+
+        return False
+
+    def associate_ssh_key(self, repository, key, *args, **kwargs):
+        url = self._build_api_url(repository, 'keys')
+
+        if key:
+            post_data = {
+                'key': self._format_public_key(key),
+                'title': 'Review Board (%s)' %
+                         Site.objects.get_current().domain,
+            }
+
+            self._key_association_api_call(self._http_post, url,
+                                           content_type='application/json',
+                                           body=simplejson.dumps(post_data))
+
+    def _key_association_api_call(self, instance_method, *args,
+                                  **kwargs):
+        """Returns response of API call, or raises SSHKeyAssociationError.
+
+        The `instance_method` should be one of the HostingService http methods
+        (e.g. _http_post, _http_get, etc.)
+        """
+        try:
+            response, headers = instance_method(*args, **kwargs)
+            return response
+        except (urllib2.HTTPError, urllib2.URLError), e:
+            try:
+                rsp = simplejson.loads(e.read())
+                status_code = e.code
+            except:
+                rsp = None
+                status_code = None
+
+            if rsp and status_code:
+                api_msg = self._get_api_error_message(rsp, status_code)
+                raise SSHKeyAssociationError('%s (%s)' % (api_msg, e))
+            else:
+                raise SSHKeyAssociationError(str(e))
+
+    def _format_public_key(self, key):
+        """Return the server's SSH public key as a string (if it exists)
+
+        The key is formatted for POSTing to GitHub's API.
+        """
+        # Key must be prepended with algorithm name
+        return '%s %s' % (key.get_name(), key.get_base64())
+
+    def _get_api_error_message(self, rsp, status_code):
+        """Return the error(s) reported by the GitHub API, as a string
+
+        See: http://developer.github.com/v3/#client-errors
+        """
+        if 'message' not in rsp:
+            msg = _('Unknown GitHub API Error')
+        elif 'errors' in rsp and status_code == httplib.UNPROCESSABLE_ENTITY:
+            errors = [e['message'] for e in rsp['errors'] if 'message' in e]
+            msg = '%s: (%s)' % (rsp['message'], ', '.join(errors))
+        else:
+            msg = rsp['message']
+
+        return msg
 
     def _http_get(self, url, *args, **kwargs):
         data, headers = super(GitHub, self)._http_get(url, *args, **kwargs)

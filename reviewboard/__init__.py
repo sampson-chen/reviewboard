@@ -4,7 +4,7 @@
 #
 #   (Major, Minor, Micro, Patch, alpha/beta/rc/final, Release Number, Released)
 #
-VERSION = (1, 6, 12, 0, 'final', 0, True)
+VERSION = (1, 7, 0, 0, 'beta', 3, False)
 
 
 def get_version_string():
@@ -59,24 +59,34 @@ def initialize():
     import os
 
     from django.conf import settings
-    from djblets.util.misc import generate_cache_serials
+    from django.db import DatabaseError
+    from djblets.util.misc import generate_ajax_serial
     from djblets import log
 
     from reviewboard import signals
+    from reviewboard.extensions.base import get_extension_manager
 
     # This overrides a default django templatetag (url), and we want to make
     # sure it will always get loaded in every python instance.
     import reviewboard.site.templatetags
 
-
     # Set up logging.
     log.init_logging()
+
     if settings.DEBUG:
         logging.debug("Log file for Review Board v%s (PID %s)" %
                       (get_version_string(), os.getpid()))
 
-    # Generate cache serials
-    generate_cache_serials()
+    # Generate the AJAX serial, used for AJAX request caching.
+    generate_ajax_serial()
+
+    # Load all extensions
+    try:
+        get_extension_manager().load()
+    except DatabaseError:
+        # This database is from a time before extensions, so don't attempt to
+        # load any extensions yet.
+        pass
 
     signals.initializing.send(sender=None)
 

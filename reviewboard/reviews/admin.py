@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.template.defaultfilters import truncatechars
 from django.utils.translation import ugettext_lazy as _
 
 from reviewboard.reviews.forms import DefaultReviewerForm, GroupForm
@@ -9,7 +10,7 @@ from reviewboard.reviews.models import Comment, DefaultReviewer, Group, \
 
 
 class CommentAdmin(admin.ModelAdmin):
-    list_display = ('truncate_text', 'review_request_id', 'first_line',
+    list_display = ('truncated_text', 'review_request_id', 'first_line',
                     'num_lines', 'timestamp')
     search_fields = ['text']
     list_filter = ('timestamp',)
@@ -20,10 +21,15 @@ class CommentAdmin(admin.ModelAdmin):
         return obj.review.get().review_request.display_id
     review_request_id.short_description = _('Review request ID')
 
+    def truncated_text(self, obj):
+        return truncatechars(obj.text, 60)
+    truncated_text.short_description = _('Comment Text')
 
 class DefaultReviewerAdmin(admin.ModelAdmin):
     form = DefaultReviewerForm
     filter_horizontal = ('repository', 'groups', 'people',)
+    list_display = ('name', 'file_regex')
+    raw_id_fields = ('local_site',)
     fieldsets = (
         (_('General Information'), {
             'fields': ('name', 'file_regex', 'local_site'),
@@ -39,7 +45,6 @@ class DefaultReviewerAdmin(admin.ModelAdmin):
             'fields': ('repository',),
         })
     )
-    list_display = ('name', 'file_regex')
 
 
 class GroupAdmin(admin.ModelAdmin):
@@ -47,7 +52,7 @@ class GroupAdmin(admin.ModelAdmin):
     list_display = ('name', 'display_name', 'mailing_list', 'invite_only',
                     'visible')
     filter_horizontal = ('users',)
-
+    raw_id_fields = ('local_site',)
     fieldsets = (
         (_('General Information'), {
             'fields': ('name', 'display_name', 'mailing_list',
@@ -99,7 +104,7 @@ class ReviewRequestAdmin(admin.ModelAdmin):
                    'repository')
     search_fields = ['summary']
     raw_id_fields = ('submitter', 'diffset_history', 'screenshots',
-                     'inactive_screenshots', 'changedescs')
+                     'inactive_screenshots', 'changedescs', 'local_site')
     filter_horizontal = ('target_people', 'target_groups')
     fieldsets = (
         (_('General Information'), {

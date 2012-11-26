@@ -17,6 +17,10 @@ class PlasticTool(SCMTool):
     name = "Plastic SCM"
     supports_authentication = True
     uses_atomic_revisions = True
+    field_help_text = {
+        'path': 'The Plastic repository spec in the form of '
+                '[repo]@[hostname]:[port].',
+    }
     dependencies = {
         'executables': ['cm'],
     }
@@ -35,7 +39,7 @@ class PlasticTool(SCMTool):
         self.client = PlasticClient(repository.path, self.reponame,
                                     self.hostname, self.port)
 
-    def get_changeset(self, changesetid):
+    def get_changeset(self, changesetid, allow_empty=False):
         logging.debug('Plastic: get_changeset %s' % (changesetid))
 
         changesetdata = self.client.get_changeset(changesetid)
@@ -109,7 +113,7 @@ class PlasticTool(SCMTool):
         except FileNotFoundError:
             return False
 
-    def parse_diff_revision(self, file_str, revision_str):
+    def parse_diff_revision(self, file_str, revision_str, *args, **kwargs):
         logging.debug('Plastic: parse_diff_revision file %s revision %s' %
                       (file_str, revision_str))
 

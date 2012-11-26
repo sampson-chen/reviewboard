@@ -14,12 +14,12 @@ from django.utils.translation import ugettext_lazy as _
 from djblets.util.filesystem import is_exe_in_path
 
 from reviewboard.diffviewer.parser import DiffParser, DiffParserError, File
-from reviewboard.scmtools import sshutils
 from reviewboard.scmtools.core import SCMClient, SCMTool, HEAD, PRE_CREATION
 from reviewboard.scmtools.errors import FileNotFoundError, \
                                         InvalidRevisionFormatError, \
                                         RepositoryNotFoundError, \
                                         SCMError
+from reviewboard.ssh import utils as sshutils
 
 
 GIT_DIFF_EMPTY_CHANGESET_SIZE = 3
@@ -52,6 +52,11 @@ class GitTool(SCMTool):
     name = "Git"
     supports_raw_file_urls = True
     supports_authentication = True
+    field_help_text = {
+        'path': 'For local Git repositories, this should be the path to a '
+                '.git directory that Review Board can read from. For remote '
+                'Git repositories, it should be the clone URL.',
+    }
     dependencies = {
         'executables': ['git']
     }
@@ -83,12 +88,13 @@ class GitTool(SCMTool):
         except (FileNotFoundError, InvalidRevisionFormatError):
             return False
 
-    def parse_diff_revision(self, file_str, revision_str):
+    def parse_diff_revision(self, file_str, revision_str, moved=False,
+                            *args, **kwargs):
         revision = revision_str
 
         if file_str == "/dev/null":
             revision = PRE_CREATION
-        elif revision != PRE_CREATION and revision != '':
+        elif revision != PRE_CREATION and not moved and revision != '':
             # Moved files with no changes has no revision,
             # so don't validate those.
             self.client.validate_sha1_format(file_str, revision)

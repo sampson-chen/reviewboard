@@ -19,6 +19,9 @@ class ClearCaseTool(SCMTool):
     name = 'ClearCase'
     uses_atomic_revisions = False
     supports_authentication = False
+    field_help_text = {
+        'path': 'The absolute path to the VOB.',
+    }
     dependencies = {
         'executables': ['cleartool'],
     }
@@ -236,7 +239,7 @@ class ClearCaseTool(SCMTool):
 
         return output
 
-    def parse_diff_revision(self, extended_path, revision_str):
+    def parse_diff_revision(self, extended_path, revision_str, *args, **kwargs):
         """Guess revision based on extended_path.
 
         Revision is part of file path, called extended-path,

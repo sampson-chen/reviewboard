@@ -1,3 +1,4 @@
+from __future__ import with_statement
 import fnmatch
 import os
 import re
@@ -20,6 +21,7 @@ from django.utils.translation import ugettext as _
 
 from djblets.log import log_timed
 from djblets.siteconfig.models import SiteConfiguration
+from djblets.util.contextmanagers import controlled_subprocess
 from djblets.util.misc import cache_memoize
 
 from reviewboard.accounts.models import Profile
@@ -220,15 +222,17 @@ def patch(diff, file, filename):
 
     diff = convert_line_endings(diff)
 
-    # XXX: catch exception if Popen fails?
     newfile = '%s-new' % oldfile
-    p = subprocess.Popen(['patch', '-o', newfile, oldfile],
-                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
-    p.stdin.write(diff)
-    p.stdin.close()
-    patch_output = p.stdout.read()
-    failure = p.wait()
+
+    process = subprocess.Popen(['patch', '-o', newfile, oldfile],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT)
+
+    with controlled_subprocess("patch", process) as p:
+        p.stdin.write(diff)
+        p.stdin.close()
+        patch_output = p.stdout.read()
+        failure = p.wait()
 
     if failure:
         f = open("%s.diff" %
@@ -316,17 +320,24 @@ def convert_to_utf8(s, enc):
         return s.encode('utf-8')
     elif isinstance(s, basestring):
         try:
-            u = unicode(s, 'utf-8')
-            return s
+            # First try strict unicode (for when everything is valid utf-8)
+            return unicode(s, 'utf-8')
         except UnicodeError:
+            # Now try any candidate encodings.
             for e in enc.split(','):
                 try:
                     u = unicode(s, e)
                     return u.encode('utf-8')
                 except UnicodeError:
                     pass
-            raise Exception(_("Diff content couldn't be converted to UTF-8 "
-                              "using the following encodings: %s") % enc)
+
+            # Finally, try to convert to straight unicode and replace all
+            # unknown characters.
+            try:
+                return unicode(s, 'utf-8', errors='replace')
+            except UnicodeError:
+                raise Exception(_("Diff content couldn't be converted to UTF-8 "
+                                  "using the following encodings: %s") % enc)
     else:
         raise TypeError("Value to convert is unexpected type %s", type(s))
 
@@ -428,7 +439,6 @@ def compute_chunk_last_header(lines, numlines, meta, last_header=None):
             last_header[i] = {
                 'line': header[0],
                 'text': header[1].strip(),
-                'expand_offset': linenum + numlines - header[0],
             }
 
     return last_header
@@ -1119,6 +1129,7 @@ def get_diff_files(diffset, filediff=None, interdiffset=None):
             'force_interdiff': force_interdiff,
             'binary': filediff.binary,
             'deleted': filediff.deleted,
+            'moved': filediff.moved,
             'newfile': newfile,
             'index': len(files),
             'chunks_loaded': False,
@@ -1163,7 +1174,11 @@ def populate_diff_chunks(files, enable_syntax_highlighting=True):
         force_interdiff = file['force_interdiff']
         chunks = []
 
-        if not filediff.binary and not filediff.deleted:
+        # If the file is binary or deleted, don't get chunks. Also don't
+        # get chunks if there is no source_revision, which occurs if a
+        # file has moved and has no changes.
+        if (not filediff.binary and not filediff.deleted and
+            filediff.source_revision != ''):
             key = key_prefix
 
             if not force_interdiff:

@@ -1,4 +1,3 @@
-from datetime import datetime
 import logging
 
 from django.conf import settings
@@ -6,6 +5,7 @@ from django.contrib.sites.models import Site
 from django.core.mail import EmailMultiAlternatives
 from django.core.urlresolvers import reverse
 from django.template.loader import render_to_string
+from django.utils import timezone
 from djblets.siteconfig.models import SiteConfiguration
 
 from reviewboard.accounts.signals import user_registered
@@ -186,8 +186,6 @@ def send_review_mail(user, review_request, subject, in_reply_to,
     context['domain'] = current_site.domain
     context['domain_method'] = domain_method
     context['review_request'] = review_request
-    context['MEDIA_URL'] = settings.MEDIA_URL
-    context['MEDIA_SERIAL'] = settings.MEDIA_SERIAL
 
     if review_request.local_site:
         context['local_site_name'] = review_request.local_site.name
@@ -257,7 +255,7 @@ def mail_review_request(user, review_request, changedesc=None):
     if not review_request.public or review_request.status == 'D':
         return
 
-    subject = u"Review Request: %s" % review_request.summary
+    subject = u"Review Request %d: %s" % (review_request.id, review_request.summary)
     reply_message_id = None
 
     if review_request.email_message_id:
@@ -274,7 +272,7 @@ def mail_review_request(user, review_request, changedesc=None):
         extra_context['change_text'] = changedesc.text
         extra_context['changes'] = changedesc.fields_changed
 
-    review_request.time_emailed = datetime.now()
+    review_request.time_emailed = timezone.now()
     review_request.email_message_id = \
         send_review_mail(user, review_request, subject, reply_message_id,
                          extra_recipients,
@@ -307,13 +305,13 @@ def mail_review(user, review):
     review.email_message_id = \
         send_review_mail(user,
                          review_request,
-                         u"Re: Review Request: %s" % review_request.summary,
+                         u"Re: Review Request %d: %s" % (review_request.id, review_request.summary),
                          review_request.email_message_id,
                          None,
                          'notifications/review_email.txt',
                          'notifications/review_email.html',
                          extra_context)
-    review.time_emailed = datetime.now()
+    review.time_emailed = timezone.now()
     review.save()
 
 
@@ -342,13 +340,13 @@ def mail_reply(user, reply):
     reply.email_message_id = \
         send_review_mail(user,
                          review_request,
-                         u"Re: Review Request: %s" % review_request.summary,
+                         u"Re: Review Request %d: %s" % (review_request.id, review_request.summary),
                          review.email_message_id,
                          review.participants,
                          'notifications/reply_email.txt',
                          'notifications/reply_email.html',
                          extra_context)
-    reply.time_emailed = datetime.now()
+    reply.time_emailed = timezone.now()
     reply.save()
 
 

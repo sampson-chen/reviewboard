@@ -1,8 +1,12 @@
 {% extends "reviews/reviewable_base.html" %}
 {% load i18n %}
 {% load djblets_deco %}
+{% load djblets_extensions %}
 {% load djblets_utils %}
+{% load rb_extensions %}
 {% load reviewtags %}
+{% load staticfiles %}
+{% load tz %}
 
 {% block title %}{{review_request_details.summary}} | {% trans "Review Request" %}{% endblock %}
 
@@ -12,19 +16,13 @@
 {% endblock %}
 
 {% block css %}
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/diffviewer.css?{{MEDIA_SERIAL}}" />
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/reviews.css?{{MEDIA_SERIAL}}" />
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/syntax.css?{{MEDIA_SERIAL}}" />
+{{block.super}}
+
 {% if siteconfig.settings.diffviewer_show_trailing_whitespace|default_if_none:1 %}
 <style type="text/css">
   .ew { background: #ee3434; }
 </style>
 {% endif %}
-{% endblock %}
-
-{% block scripts-post %}
-<script type="text/javascript" src="{{MEDIA_URL}}rb/js/reviews.js?{{MEDIA_SERIAL}}"></script>
-<script type="text/javascript" src="{{MEDIA_URL}}rb/js/jquery.form.js?{{MEDIA_SERIAL}}"></script>
 {% endblock %}
 
 {% block content %}
@@ -33,16 +31,20 @@
 
 {% box "review-request" %}
 
-<ul class="actions">
+<div class="actions-container">
+ <ul class="actions">
+{% review_request_action_hooks %}
+{% review_request_dropdown_action_hooks %}
 {% include "reviews/review_request_actions_secondary.html" %}
 {% if has_diffs %}
- <li class="primary"><a href="diff/raw/">{% trans "Download Diff" %}</a></li>
+  <li class="primary"><a href="diff/raw/">{% trans "Download Diff" %}</a></li>
 {% endif %}
 {% include "reviews/review_request_actions_primary.html" %}
 {% if has_diffs %}
- <li class="primary"><a href="diff/#index_header">{% trans "View Diff" %}</a></li>
+  <li class="primary"><a href="diff/#index_header">{% trans "View Diff" %}</a></li>
 {% endif %}
-</ul>
+ </ul>
+</div>
 
 <div class="main">
 {% include "reviews/review_request_box.html" %}
@@ -50,15 +52,22 @@
 <ul class="controls">
 {% if entries %}
  <li>
-  <a href="#" id="expand-all"><img width="14" height="14" border="0" alt="" src="{{MEDIA_URL}}rb/images/expand.png?{{MEDIA_SERIAL}}"> {% trans "Expand All" %}</a>
+  <a href="#" id="expand-all">
+   <img width="14" height="14" border="0" alt="" src="{% static "rb/images/expand.png" %}">
+   <span>{% trans "Expand All" %}</span>
+  </a>
+ </li>
+ <li>
+  <a href="#" id="collapse-all">
+   <img width="14" height="14" border="0" alt="" src="{% static "rb/images/collapse.png" %}">
+   <span>{% trans "Collapse All" %}</span>
+  </a>
  </li>
 {% endif %}
 </ul>
 
 </div>
 {% endbox %}
-
-
 
 {% for entry in entries %}
 {%  if entry.review %}
@@ -70,22 +79,24 @@
 {% definevar "boxclass" %}review {{entry.class}}{% enddefinevar %}
 {% box boxclass %}
 <div class="main">
- <div class="banners"></div>
  <div class="header">
+  {% template_hook_point "review-summary-header-pre" %}
   {% if entry.review.ship_it %}<div class="shipit">{% trans "Ship it!" %}</div>{% endif %}
   <div class="collapse-button"></div>
   <div class="reviewer"><a href="{% url user entry.review.user %}" class="user">{{entry.review.user|user_displayname}}</a></div>
-  <div class="posted_time">{% blocktrans with entry.review.timestamp as timestamp and entry.review.timestamp|date:"c" as timestamp_raw %}Posted <time class="timesince" datetime="{{timestamp_raw}}">{{timestamp}}</time> ({{timestamp}}){% endblocktrans %}</div>
+  <div class="posted_time">{% localtime on %}{% blocktrans with entry.review.timestamp as timestamp and entry.review.timestamp|date:"c" as timestamp_raw %}Posted <time class="timesince" datetime="{{timestamp_raw}}">{{timestamp}}</time> ({{timestamp}}){% endblocktrans %}{% endlocaltime %}</div>
+  {% template_hook_point "review-summary-header-post" %}
  </div>
+ <div class="banners"></div>
  <div class="body">
    <pre class="body_top reviewtext">{{entry.review.body_top|escape}}</pre>
    {% reply_section entry "" "body_top" "rcbt" %}
-{% if entry.diff_comments or entry.screenshot_comments or entry.file_attachment_comments %}
+{% if entry.comments.diff_comments or entry.comments.screenshot_comments or entry.comments.file_attachment_comments %}
    <dl class="diff-comments">
 
-{% for comment in entry.screenshot_comments %}
+{% for comment in entry.comments.screenshot_comments %}
     <dt>
-     <a name="scomment{{comment.id}}"></a>
+     <a class="comment-anchor" name="{{comment.anchor_prefix}}{{comment.id}}"></a>
      <div class="screenshot">
       <span class="filename">
        <a href="{{comment.screenshot.get_absolute_url}}">{% spaceless %}
@@ -100,9 +111,9 @@
      </div>
     </dt>
     <dd>
-     <pre>{{comment.text|escape}}</pre>
+     <pre class="comment-text" id="{{comment.anchor_prefix}}{{comment.id}}">{{comment.text|escape}}</pre>
 {% if comment.issue_opened %}
-     <div id="comment-{{comment.id}}-issue" class="issue-indicator">
+     <div id="comment-{{comment.comment_type}}-{{comment.id}}-issue" class="issue-indicator">
        {% comment_issue review_request_details comment "screenshot_comments" %}
      </div>
 {% endif %}
@@ -110,14 +121,14 @@
     </dd>
 {% endfor %}
 
-{% for comment in entry.file_attachment_comments %}
+{% for comment in entry.comments.file_attachment_comments %}
     <dt>
-     <a name="fcomment{{comment.id}}"></a>
+     <a class="comment-anchor" name="{{comment.anchor_prefix}}{{comment.id}}"></a>
      <div class="file-attachment">
       <a href="{{comment.file_attachment.get_absolute_url}}">{% spaceless %}
        <img src="{{comment.file_attachment.icon_url}}" />
-        <span class="filename">{{comment.file_attachment.filename}}</span>
-	  </a>
+       <span class="filename">{{comment.file_attachment.filename}}</span>
+      </a>
 {% if draft and comment.file_attachment.draft_caption %}
       <p class="caption">{{comment.file_attachment.draft_caption}}</p>
 {% else %}
@@ -130,9 +141,9 @@
      </div>
     </dt>
     <dd>
-     <pre>{{comment.text|escape}}</pre>
+     <pre class="comment-text" id="{{comment.anchor_prefix}}{{comment.id}}">{{comment.text|escape}}</pre>
 {% if comment.issue_opened %}
-     <div id="comment-{{comment.id}}-issue" class="issue-indicator">
+     <div id="comment-{{comment.comment_type}}-{{comment.id}}-issue" class="issue-indicator">
        {% comment_issue review_request_details comment "file_attachment_comments" %}
      </div>
 {% endif %}
@@ -140,9 +151,9 @@
     </dd>
 {% endfor %}
 
-{% for comment in entry.diff_comments %}
+{% for comment in entry.comments.diff_comments %}
     <dt>
-     <a name="comment{{comment.id}}"></a>
+     <a class="comment-anchor" name="{{comment.anchor_prefix}}{{comment.id}}"></a>
      <div id="comment_container_{{comment.id}}">
       <table class="sidebyside loading">
        <thead>
@@ -169,9 +180,9 @@
      </div>
     </dt>
     <dd>
-     <pre class="reviewtext">{{comment.text|escape}}</pre>
+     <pre class="reviewtext comment-text" id="{{comment.anchor_prefix}}{{comment.id}}">{{comment.text|escape}}</pre>
 {% if comment.issue_opened %}
-     <div id="comment-{{comment.id}}-issue" class="issue-indicator">
+     <div id="comment-{{comment.comment_type}}-{{comment.id}}-issue" class="issue-indicator">
        {% comment_issue review_request_details comment "diff_comments" %}
      </div>
 {% endif %}
@@ -179,7 +190,7 @@
     </dd>
     <script type="text/javascript">
       $(document).ready(function() {
-        queueLoadDiffFragment("diff_fragments", "{{comment.id}}",
+        RB.queueLoadDiffFragment("diff_fragments", "{{comment.id}}",
 {% if comment.interfilediff %}
           "{{comment.filediff.id}}-{{comment.interfilediff.id}}"
 {% else %}
@@ -208,13 +219,13 @@
  <div class="header">
    <div class="collapse-button"></div>
    <div class="reviewer"><b>{% trans "Review request changed" %}</b></div>
-   <div class="posted_time">{% blocktrans with entry.changedesc.timestamp as timestamp and entry.changedesc.timestamp|date:"c" as timestamp_raw %}Updated <time class="timesince" datetime="{{timestamp_raw}}">{{timestamp}}</time> ({{timestamp}}){% endblocktrans %}</div>
+   <div class="posted_time">{% localtime on %}{% blocktrans with entry.changedesc.timestamp as timestamp and entry.changedesc.timestamp|date:"c" as timestamp_raw %}Updated <time class="timesince" datetime="{{timestamp_raw}}">{{timestamp}}</time> ({{timestamp}}){% endblocktrans %}{% endlocaltime %}</div>
  </div>
  <div class="body">
   <ul>
 {% for fieldinfo in entry.changeinfo %}
    <li><label>{{fieldinfo.title}}</label>
-{%  ifequal fieldinfo.type "changed" %}
+{%  if fieldinfo.type == "changed" %}
 {%   if fieldinfo.multiline %}
 	  <p><label>{% trans "Changed from:" %}</label></p>
       <pre>{{fieldinfo.info.old.0}}</pre>
@@ -223,30 +234,49 @@
 {%   else %}
 {%    blocktrans with fieldinfo.info.old.0 as old_value and fieldinfo.info.new.0 as new_value %}changed from <i>{{old_value}}</i> to <i>{{new_value}}</i>{% endblocktrans %}
 {%   endif %}
-{%  endifequal %}
-{%  ifequal fieldinfo.type "add_remove" %}
+{%  endif %}
+{%  if fieldinfo.type == "add_remove" %}
     <ul>
 {%   if fieldinfo.info.removed %}
-{% definevar "removed_values" %}
-{% for item in fieldinfo.info.removed %}{% if item.1 %}<a href="{{item.1}}">{{item.0}}</a>{% else %}{{item.0}}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
-{% enddefinevar %}
-<li>{% blocktrans %}removed {{removed_values}}{% endblocktrans %}</li>
+{%    definevar "removed_values" %}
+{%     for item in fieldinfo.info.removed %}
+{%      if item.1 %}
+     <a href="{{item.1}}">{{item.0}}</a>
+{%      else %}
+         {{item.0}}
+{%      endif %}
+{%      if not forloop.last %}, {% endif %}
+{%     endfor %}
+{%    enddefinevar %}
+     <li>{% blocktrans %}removed {{removed_values}}{% endblocktrans %}</li>
 {%   endif %}
 {%   if fieldinfo.info.added %}
-{% definevar "added_values" %}
-{% for item in fieldinfo.info.added %}{% if item.1 %}<a href="{{item.1}}">{{item.0}}</a>{% else %}{{item.0}}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
-{% enddefinevar %}
-<li>{% blocktrans %}added {{added_values}}{% endblocktrans %}</li>
+{%    definevar "added_values" %}
+{%     for item in fieldinfo.info.added %}
+{%      if item.1 %}
+     <a href="{{item.1}}">{{item.0}}</a>
+{%       if fieldinfo.diff_revision %}
+{%        with fieldinfo.diff_revision|add:"-1" as past_revision and fieldinfo.diff_revision as current_revision %}
+     - <a href="{% url view-interdiff review_request.display_id past_revision current_revision %}">{% trans "Show changes" %}</a>
+{%        endwith %}
+{%       endif %}
+{%      else %}
+         {{item.0}}
+{%      endif %}
+{%      if not forloop.last %}, {% endif %}
+{%     endfor %}
+{%    enddefinevar %}
+     <li>{% blocktrans %}added {{added_values}}{% endblocktrans %}</li>
 {%   endif %}
     </ul>
-{%  endifequal %}
-{%  ifequal fieldinfo.type "screenshot_captions" %}
+{%  endif %}
+{%  if fieldinfo.type == "screenshot_captions" or fieldinfo.type == "file_captions" %}
     <ul>
 {%   for info in fieldinfo.info.values %}
      <li>{% blocktrans with info.old.0 as old_value and info.new.0 as new_value %}changed from <i>{{old_value}}</i> to <i>{{new_value}}</i>{% endblocktrans %}</li>
 {%   endfor %}
     </ul>
-{%  endifequal %}
+{%  endif %}
    </li>
 {% endfor %}
   </ul>
@@ -260,10 +290,12 @@
 {%  endif %}
 {% endfor %}
 
+{% localtime off %}
 <script type="text/javascript">
   $(document).ready(function() {
 	  /* Listen for updates to this review request. */
-	  registerForUpdates("{{last_activity_time|date:"Y-m-d H:i:s"}}");
+	  RB.registerForUpdates("{{last_activity_time|date:"c"}}");
+{% endlocaltime %}
 
 {% if request.GET.reply_id and request.GET.reply_type %}
       $.funcQueue("diff_comments").add(function() {

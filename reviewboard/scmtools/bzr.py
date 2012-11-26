@@ -15,9 +15,9 @@ try:
 except ImportError:
     has_bzrlib = False
 
-from reviewboard.scmtools import sshutils
 from reviewboard.scmtools.core import SCMTool, HEAD, PRE_CREATION
 from reviewboard.scmtools.errors import RepositoryNotFoundError, SCMError
+from reviewboard.ssh import utils as sshutils
 
 
 # Register these URI schemes so we can handle them properly.
@@ -129,7 +129,7 @@ class BZRTool(SCMTool):
 
         return contents
 
-    def parse_diff_revision(self, file_str, revision_str):
+    def parse_diff_revision(self, file_str, revision_str, *args, **kwargs):
         if revision_str == BZRTool.PRE_CREATION_TIMESTAMP:
             return (file_str, PRE_CREATION)
 
@@ -193,7 +193,7 @@ class BZRTool(SCMTool):
             timestamp += delta
 
         # convert to local time
-        return datetime.fromtimestamp(calendar.timegm(timestamp.timetuple()))
+        return datetime.utcfromtimestamp(calendar.timegm(timestamp.timetuple()))
 
     @classmethod
     def check_repository(cls, path, username=None, password=None,

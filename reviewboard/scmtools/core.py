@@ -2,12 +2,16 @@ import base64
 import logging
 import os
 import subprocess
+import sys
 import urllib2
 import urlparse
 
 import reviewboard.diffviewer.parser as diffparser
-from reviewboard.scmtools import sshutils
-from reviewboard.scmtools.errors import FileNotFoundError, SCMError
+from reviewboard.scmtools.errors import AuthenticationError, \
+                                        FileNotFoundError, \
+                                        SCMError
+from reviewboard.ssh import utils as sshutils
+from reviewboard.ssh.errors import SSHAuthenticationError
 
 
 class ChangeSet:
@@ -51,6 +55,10 @@ class SCMTool(object):
     diff_uses_changeset_ids = False
     supports_authentication = False
     supports_raw_file_urls = False
+    field_help_text = {
+        'path': 'The path to the repository. This will generally be the URL '
+                'you would use to check out the repository.',
+    }
 
     # A list of dependencies for this SCMTool. This should be overridden
     # by subclasses. Python module names go in dependencies['modules'] and
@@ -74,13 +82,13 @@ class SCMTool(object):
         except FileNotFoundError:
             return False
 
-    def parse_diff_revision(self, file_str, revision_str):
+    def parse_diff_revision(self, file_str, revision_str, moved=False):
         raise NotImplementedError
 
     def get_diffs_use_absolute_paths(self):
         return False
 
-    def get_changeset(self, changesetid):
+    def get_changeset(self, changesetid, allow_empty=False):
         raise NotImplementedError
 
     def get_pending_changesets(self, userid):
@@ -124,6 +132,8 @@ class SCMTool(object):
         if local_site_name:
             env['RB_LOCAL_SITE'] = local_site_name
 
+        env['PYTHONPATH'] = ':'.join(sys.path)
+
         return subprocess.Popen(command,
                                 env=env,
                                 stderr=subprocess.PIPE,
@@ -149,7 +159,18 @@ class SCMTool(object):
             logging.debug(
                 "%s: Attempting ssh connection with host: %s, username: %s" % \
                 (cls.__name__, hostname, username))
-            sshutils.check_host(hostname, username, password, local_site_name)
+
+            try:
+                sshutils.check_host(hostname, username, password,
+                                    local_site_name)
+            except SSHAuthenticationError, e:
+                # Represent an SSHAuthenticationError as a standard
+                # AuthenticationError.
+                raise AuthenticationError(e.allowed_types, unicode(e),
+                                          e.user_key)
+            except:
+                # Re-raise anything else
+                raise
 
     @classmethod
     def get_auth_from_uri(cls, path, username):

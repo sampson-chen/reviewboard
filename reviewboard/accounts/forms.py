@@ -8,6 +8,7 @@ from django.utils.translation import ugettext as _
 from djblets.auth.forms import RegistrationForm as DjbletsRegistrationForm
 from djblets.siteconfig.forms import SiteSettingsForm
 from djblets.siteconfig.models import SiteConfiguration
+from djblets.util.forms import TimeZoneField
 from recaptcha.client import captcha
 
 from reviewboard.admin.checks import get_can_enable_dns, \
@@ -23,11 +24,17 @@ class PreferencesForm(forms.Form):
         label=_("Enable syntax highlighting in the diff viewer"))
     profile_private = forms.BooleanField(required=False,
         label=_("Keep your user profile private"))
+    open_an_issue = forms.BooleanField(required=False,
+        label=_("Always open an issue when comment box opens"))
     first_name = forms.CharField(required=False)
     last_name = forms.CharField(required=False)
     email = forms.EmailField()
     password1 = forms.CharField(required=False, widget=widgets.PasswordInput())
     password2 = forms.CharField(required=False, widget=widgets.PasswordInput())
+    timezone = TimeZoneField(
+        label=_("Time Zone"),
+        required=True,
+        help_text=_("The time zone used for this account."))
 
     def __init__(self, user, *args, **kwargs):
         from reviewboard.accounts.backends import get_auth_backends
@@ -76,6 +83,8 @@ class PreferencesForm(forms.Form):
         profile.first_time_setup_done = True
         profile.syntax_highlighting = self.cleaned_data['syntax_highlighting']
         profile.is_private = self.cleaned_data['profile_private']
+        profile.open_an_issue = self.cleaned_data['open_an_issue']
+        profile.timezone = self.cleaned_data['timezone']
         profile.save()
 
     def clean_password2(self):

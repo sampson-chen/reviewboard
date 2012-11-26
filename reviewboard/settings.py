@@ -3,6 +3,9 @@
 import os
 import sys
 
+import djblets
+
+
 # Can't import django.utils.translation yet
 _ = lambda s: s
 
@@ -15,9 +18,16 @@ ADMINS = (
 
 MANAGERS = ADMINS
 
+# Time zone support. If enabled, Django stores date and time information as
+# UTC in the database, uses time zone-aware datetime objects, and translates
+# them to the user's time zone in templates and forms.
+USE_TZ = True
+
 # Local time zone for this installation. All choices can be found here:
-# http://www.postgresql.org/docs/current/static/datetime-keywords.html#DATETIME-TIMEZONE-SET-TABLE
-TIME_ZONE = 'US/Pacific'
+# http://www.postgresql.org/docs/8.1/static/datetime-keywords.html#DATETIME-TIMEZONE-SET-TABLE
+# When USE_TZ is enabled, this is used as the default time zone for datetime
+# objects
+TIME_ZONE = 'UTC'
 
 # Language code for this installation. All choices can be found here:
 # http://www.w3.org/TR/REC-html40/struct/dirlang.html#langcodes
@@ -42,22 +52,29 @@ LANGUAGES = (
 TEMPLATE_LOADERS = (
     'django.template.loaders.filesystem.Loader',
     'django.template.loaders.app_directories.Loader',
+    'djblets.extensions.loaders.load_template_source',
 )
 
 MIDDLEWARE_CLASSES = [
-    'django.middleware.gzip.GZipMiddleware', # Keep this first.
+    # Keep these first, in order
+    'django.middleware.gzip.GZipMiddleware',
+    'reviewboard.admin.middleware.InitReviewBoardMiddleware',
+
     'django.middleware.common.CommonMiddleware',
     'django.middleware.doc.XViewMiddleware',
     'django.middleware.http.ConditionalGetMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
 
     # These must go before anything that deals with settings.
     'djblets.siteconfig.middleware.SettingsMiddleware',
     'reviewboard.admin.middleware.LoadSettingsMiddleware',
 
+    'djblets.extensions.middleware.ExtensionsMiddleware',
     'djblets.log.middleware.LoggingMiddleware',
+    'reviewboard.accounts.middleware.TimezoneMiddleware',
     'reviewboard.admin.middleware.CheckUpdatesRequiredMiddleware',
     'reviewboard.admin.middleware.X509AuthMiddleware',
     'reviewboard.site.middleware.LocalSiteMiddleware',
@@ -70,6 +87,7 @@ TEMPLATE_CONTEXT_PROCESSORS = (
     'django.core.context_processors.i18n',
     'django.core.context_processors.media',
     'django.core.context_processors.request',
+    'django.core.context_processors.static',
     'djblets.siteconfig.context_processors.siteconfig',
     'djblets.util.context_processors.settingsVars',
     'djblets.util.context_processors.siteRoot',
@@ -93,6 +111,19 @@ TEMPLATE_DIRS = (
     os.path.join(REVIEWBOARD_ROOT, 'templates'),
 )
 
+STATICFILES_DIRS = (
+    ('lib', os.path.join(REVIEWBOARD_ROOT, 'static', 'lib')),
+    ('rb', os.path.join(REVIEWBOARD_ROOT, 'static', 'rb')),
+    ('djblets', os.path.join(os.path.dirname(djblets.__file__), 'media')),
+)
+
+STATICFILES_FINDERS = (
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+)
+
+STATICFILES_STORAGE = 'pipeline.storage.PipelineCachedStorage'
+
 RB_BUILTIN_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -100,24 +131,30 @@ RB_BUILTIN_APPS = [
     'django.contrib.markup',
     'django.contrib.sites',
     'django.contrib.sessions',
+    'django.contrib.staticfiles',
     'djblets.datagrid',
+    'djblets.extensions',
     'djblets.feedview',
     'djblets.gravatars',
     'djblets.log',
+    'djblets.pipeline',
     'djblets.siteconfig',
     'djblets.util',
     'djblets.webapi',
+    'pipeline', # Must be after djblets.pipeline
     'reviewboard.accounts',
     'reviewboard.admin',
     'reviewboard.attachments',
     'reviewboard.changedescs',
     'reviewboard.diffviewer',
+    'reviewboard.extensions',
     'reviewboard.hostingsvcs',
     'reviewboard.notifications',
-    'reviewboard.reports',
     'reviewboard.reviews',
+    'reviewboard.reviews.ui',
     'reviewboard.scmtools',
     'reviewboard.site',
+    'reviewboard.ssh',
     'reviewboard.webapi',
 ]
 RB_EXTRA_APPS = []
@@ -157,6 +194,13 @@ if os.path.split(os.path.dirname(__file__))[1] != 'reviewboard':
     dependency_error('The directory containing manage.py must be named "reviewboard"')
 
 LOCAL_ROOT = None
+PRODUCTION = True
+
+# Cookie settings
+LANGUAGE_COOKIE_NAME = "rblanguage"
+SESSION_COOKIE_NAME = "rbsessionid"
+SESSION_COOKIE_AGE = 365 * 24 * 60 * 60 # 1 year
+SESSION_COOKIE_PATH = SITE_ROOT
 
 # Load local settings.  This can override anything in here, but at the very
 # least it needs to define database connectivity.
@@ -179,32 +223,137 @@ if not LOCAL_ROOT:
         # reviewboard/ is in the same directory as settings_local.py.
         # This is probably a Git checkout.
         LOCAL_ROOT = os.path.join(local_dir, 'reviewboard')
+        PRODUCTION = False
     else:
         # This is likely a site install. Get the parent directory.
         LOCAL_ROOT = os.path.dirname(local_dir)
 
 HTDOCS_ROOT = os.path.join(LOCAL_ROOT, 'htdocs')
+STATIC_ROOT = os.path.join(HTDOCS_ROOT, 'static')
 MEDIA_ROOT = os.path.join(HTDOCS_ROOT, 'media')
+EXTENSIONS_STATIC_ROOT = os.path.join(MEDIA_ROOT, 'ext')
+ADMIN_MEDIA_ROOT = STATIC_ROOT + 'admin/'
 
 
 # URL prefix for media -- CSS, JavaScript and images. Make sure to use a
 # trailing slash.
 #
 # Examples: "http://foo.com/media/", "/media/".
+STATIC_URL = getattr(settings_local, 'STATIC_URL', SITE_ROOT + 'static/')
 MEDIA_URL = getattr(settings_local, 'MEDIA_URL', SITE_ROOT + 'media/')
 
 
 # Base these on the user's SITE_ROOT.
 LOGIN_URL = SITE_ROOT + 'account/login/'
-ADMIN_MEDIA_PREFIX = MEDIA_URL + 'admin/'
 
-# Cookie settings
-LANGUAGE_COOKIE_NAME = "rblanguage"
-SESSION_COOKIE_NAME = "rbsessionid"
-SESSION_COOKIE_AGE = 365 * 24 * 60 * 60 # 1 year
-SESSION_COOKIE_PATH = SITE_ROOT
+# Media compression
+PIPELINE_JS = {
+    '3rdparty': {
+        'source_filenames': (
+            'lib/js/underscore-1.3.3.min.js',
+            'lib/js/backbone-0.9.2.min.js',
+            'lib/js/jquery.form.js',
+            'lib/js/jquery.timesince.js',
+            'lib/js/ui.autocomplete.js',
+        ),
+        'output_filename': 'lib/js/3rdparty.min.js',
+    },
+    'common': {
+        'source_filenames': (
+            'rb/js/utils/backboneUtils.js',
+            'rb/js/common.js',
+            'rb/js/datastore.js',
+        ),
+        'output_filename': 'rb/js/base.min.js',
+    },
+    'reviews': {
+        'source_filenames': (
+            # Note: These are roughly in dependency order.
+            'rb/js/models/abstractCommentBlockModel.js',
+            'rb/js/models/abstractReviewableModel.js',
+            'rb/js/models/fileAttachmentCommentBlockModel.js',
+            'rb/js/models/fileAttachmentReviewableModel.js',
+            'rb/js/models/regionCommentBlockModel.js',
+            'rb/js/models/imageReviewableModel.js',
+            'rb/js/models/screenshotCommentBlockModel.js',
+            'rb/js/models/screenshotReviewableModel.js',
+            'rb/js/views/abstractCommentBlockView.js',
+            'rb/js/views/abstractReviewableView.js',
+            'rb/js/views/fileAttachmentCommentBlockView.js',
+            'rb/js/views/fileAttachmentReviewableView.js',
+            'rb/js/views/regionCommentBlockView.js',
+            'rb/js/views/imageReviewableView.js',
+            'rb/js/diffviewer.js',
+            'rb/js/reviews.js',
+        ),
+        'output_filename': 'rb/js/reviews.min.js',
+    },
+    'admin': {
+        'source_filenames': (
+            'lib/js/flot/jquery.flot.min.js',
+            'lib/js/flot/jquery.flot.pie.min.js',
+            'lib/js/flot/jquery.flot.selection.min.js',
+            'lib/js/jquery.masonry.js',
+            'rb/js/admin.js',
+        ),
+        'output_filename': 'rb/js/admin.min.js',
+    },
+    'repositoryform': {
+        'source_filenames': (
+            'rb/js/repositoryform.js',
+        ),
+        'output_filename': 'rb/js/repositoryform.min.js',
+    },
+}
 
-# The list of directories that will be searched to generate a media serial.
-MEDIA_SERIAL_DIRS = ["admin", "djblets", "rb"]
+PIPELINE_CSS = {
+    'common': {
+        'source_filenames': (
+            'rb/css/common.less',
+            'rb/css/dashboard.less',
+            'rb/css/search.less',
+        ),
+        'output_filename': 'rb/css/common.min.css',
+        'absolute_paths': False,
+    },
+    'reviews': {
+        'source_filenames': (
+            'rb/css/diffviewer.less',
+            'rb/css/reviews.less',
+            'rb/css/syntax.css',
+        ),
+        'output_filename': 'rb/css/reviews.min.css',
+        'absolute_paths': False,
+    },
+    'admin': {
+        'source_filenames': (
+            'rb/css/admin.less',
+            'rb/css/admin-dashboard.less',
+        ),
+        'output_filename': 'rb/css/admin.min.css',
+        'absolute_paths': False,
+    },
+}
 
+BLESS_IMPORT_PATHS = ('rb/css/',)
+PIPELINE_CSS_COMPRESSOR = None
+PIPELINE_JS_COMPRESSOR = 'pipeline.compressors.jsmin.JSMinCompressor'
+
+# On production (site-installed) builds, we always want to use the pre-compiled
+# versions. We want this regardless of the DEBUG setting (since they may
+# turn DEBUG on in order to get better error output).
+#
+# On a build running out of a source tree, for testing purposes, we want to
+# use the raw .less and JavaScript files when DEBUG is set. When DEBUG is
+# turned off in a non-production build, though, we want to be able to play
+# with the built output, so treat it like a production install.
+
+if PRODUCTION or not DEBUG or os.getenv('FORCE_BUILD_MEDIA', ''):
+    PIPELINE_COMPILERS = ['djblets.pipeline.compilers.bless.BlessCompiler']
+    PIPELINE = True
+elif DEBUG:
+    PIPELINE_COMPILERS = []
+    PIPELINE = False
+
+# Packages to unit test
 TEST_PACKAGES = ['reviewboard']

@@ -1,25 +1,29 @@
 {% load djblets_utils %}
 {% load i18n %}
-{% ifuserorperm review_request.submitter_id "reviews.can_change_status" %}
-{%  if review_request.public %}
-{%    ifequal review_request.status 'P' %}
+{% load staticfiles %}
+
+{% if request.user.pk == review_request.submitter_id or perms.reviews.can_change_status and review_request.public %}
+{%  if review_request.status == 'P' %}
  <li>
-  <a id="close-review-request-link" href="#">{% trans "Close" %} <img src="{{MEDIA_URL}}rb/images/dropdown.png?{{MEDIA_SERIAL}}" width="7" height="5" border="0" alt="" /></a>
+  <a class="menu-title" id="close-review-request-link" href="#">{% trans "Close" %}</a>
   <ul class="menu" style="display: none;">
    <li><a id="link-review-request-close-submitted" href="#">{% trans "Submitted" %}</a></li>
    <li><a id="discard-review-request-link" href="#">{% trans "Discarded" %}</a></li>
-  {%     if perms.reviews.delete_reviewrequest %}
+{%   if perms.reviews.delete_reviewrequest %}
    <li><a id="delete-review-request-link" href="#">{% trans "Delete Permanently" %}</a></li>
-  {%     endif %}
+{%   endif %}
   </ul>
  </li>
-{%    endifequal %}
 {%  endif %}
-{% endifuserorperm %}
-{% ifuserorperm review_request.submitter_id "reviews.can_edit_reviewrequest" %}
- <li><a id="upload-screenshot-link" href="#">{% trans "Add Screenshot" %}</a></li>
- <li><a id="upload-file-link" href="#">{% trans "Add File" %}</a></li>
-{% if upload_diff_form %}
- <li><a id="upload-diff-link" href="#">{% if has_diffs %}{% trans "Update Diff" %}{% else %}{% trans "Upload Diff" %}{% endif %}</a></li>
 {% endif %}
-{% endifuserorperm %}
+{% if request.user.pk == review_request.submitter_id or perms.reviews.can_edit_reviewrequest %}
+ <li>
+  <a class="menu-title" id="update-review-request-link" href="#">{% trans "Update" %}</a>
+  <ul class="menu" style="display: none;">
+{%  if upload_diff_form %}
+   <li><a id="upload-diff-link" href="#">{% if has_diffs %}{% trans "Update Diff" %}{% else %}{% trans "Upload Diff" %}{% endif %}</a></li>
+{%  endif %}
+   <li><a id="upload-file-link" href="#">{% trans "Add File" %}</a></li>
+  </ul>
+ </li>
+{% endif %}

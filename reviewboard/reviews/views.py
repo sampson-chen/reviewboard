@@ -1,7 +1,6 @@
 import copy
 import logging
 import time
-from datetime import datetime
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -14,9 +13,10 @@ from django.shortcuts import get_object_or_404, get_list_or_404, \
                              render_to_response
 from django.template.context import RequestContext
 from django.template.loader import render_to_string
-from django.utils import simplejson
+from django.utils import simplejson, timezone
 from django.utils.http import http_date
 from django.utils.safestring import mark_safe
+from django.utils.timezone import utc
 from django.utils.translation import ugettext as _
 from django.views.decorators.cache import cache_control
 from django.views.generic.list_detail import object_list
@@ -31,11 +31,16 @@ from djblets.util.misc import get_object_or_none
 from reviewboard.accounts.decorators import check_login_required, \
                                             valid_prefs_required
 from reviewboard.accounts.models import ReviewRequestVisit, Profile
+from reviewboard.attachments.forms import UploadFileForm, CommentFileForm
+from reviewboard.attachments.models import FileAttachment
+from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.diffutils import get_file_chunks_in_range
 from reviewboard.diffviewer.models import DiffSet
 from reviewboard.diffviewer.views import view_diff, view_diff_fragment, \
                                          exception_traceback_string
-from reviewboard.attachments.forms import UploadFileForm, CommentFileForm
+from reviewboard.extensions.hooks import DashboardHook, \
+                                         ReviewRequestDetailHook
+from reviewboard.reviews.ui.screenshot import LegacyScreenshotReviewUI
 from reviewboard.reviews.datagrids import DashboardDataGrid, \
                                           GroupDataGrid, \
                                           ReviewRequestDataGrid, \
@@ -45,12 +50,14 @@ from reviewboard.reviews.errors import OwnershipError
 from reviewboard.reviews.forms import NewReviewRequestForm, \
                                       UploadDiffForm, \
                                       UploadScreenshotForm
-from reviewboard.reviews.models import Comment, FileAttachmentComment, \
+from reviewboard.reviews.models import Comment, \
+                                       FileAttachmentComment, \
                                        Group, ReviewRequest, Review, \
                                        Screenshot, ScreenshotComment
 from reviewboard.scmtools.core import PRE_CREATION
 from reviewboard.scmtools.errors import SCMError
 from reviewboard.site.models import LocalSite
+from reviewboard.ssh.errors import SSHError
 from reviewboard.webapi.encoder import status_to_string
 
 
@@ -71,7 +78,8 @@ def _render_permission_denied(
 
 def _find_review_request(request, review_request_id, local_site_name):
     """
-    Find a review request based on an ID and optional LocalSite name.
+    Find a review request based on an ID, optional LocalSite name and optional
+    select related query.
 
     If a local site is passed in on the URL, we want to look up the review
     request using the local_id instead of the pk. This allows each LocalSite
@@ -266,7 +274,7 @@ def new_review_request(request,
                     parent_diff_file=request.FILES.get('parent_diff_path'),
                     local_site=local_site)
                 return HttpResponseRedirect(review_request.get_absolute_url())
-            except (OwnershipError, SCMError, ValueError):
+            except (OwnershipError, SCMError, SSHError, ValueError):
                 pass
     else:
         form = NewReviewRequestForm(request.user, local_site)
@@ -290,8 +298,8 @@ def review_detail(request,
     # request based on the local_id instead of the pk. This allows each
     # local_site configured to have its own review request ID namespace
     # starting from 1.
-    review_request, response = \
-        _find_review_request(request, review_request_id, local_site_name)
+    review_request, response = _find_review_request(
+        request, review_request_id, local_site_name)
 
     if not review_request:
         return response
@@ -381,8 +389,8 @@ def review_detail(request,
         if review_request.public and review_request.status == "P":
             visited, visited_is_new = ReviewRequestVisit.objects.get_or_create(
                 user=request.user, review_request=review_request)
-            last_visited = visited.timestamp
-            visited.timestamp = datetime.now()
+            last_visited = visited.timestamp.replace(tzinfo=utc)
+            visited.timestamp = timezone.now()
             visited.save()
 
         # Try using get_profile first, because it caches for future calls.
@@ -395,10 +403,14 @@ def review_detail(request,
         except Profile.DoesNotExist:
             pass
 
-
     draft = review_request.get_draft(request.user)
     review_request_details = draft or review_request
     diffsets = review_request.get_diffsets()
+
+    # Map diffset IDs to their revision ID for changedescs
+    diffset_versions = {}
+    for diffset in diffsets:
+        diffset_versions[diffset.pk] = diffset.revision
 
     # Find out if we can bail early. Generate an ETag for this.
     last_activity_time, updated_object = \
@@ -453,9 +465,11 @@ def review_detail(request,
 
             entry = {
                 'review': review,
-                'diff_comments': [],
-                'screenshot_comments': [],
-                'file_attachment_comments': [],
+                'comments': {
+                    'diff_comments': [],
+                    'screenshot_comments': [],
+                    'file_attachment_comments': []
+                },
                 'timestamp': review.timestamp,
                 'class': state,
             }
@@ -470,9 +484,19 @@ def review_detail(request,
 
     # Get all the file attachments and screenshots and build a couple maps,
     # so we can easily associate those objects in comments.
-    file_attachments = list(review_request_details.get_file_attachments())
+    file_attachments = []
+
+    for file_attachment in review_request_details.get_file_attachments():
+        file_attachment._comments = []
+        file_attachments.append(file_attachment)
+
+    screenshots = []
+
+    for screenshot in review_request_details.get_screenshots():
+        screenshot._comments = []
+        screenshots.append(screenshot)
+
     file_attachment_id_map = _build_id_map(file_attachments)
-    screenshots = list(review_request_details.get_screenshots())
     screenshot_id_map = _build_id_map(screenshots)
 
     # There will be non-visible (generally deleted) file attachments and
@@ -480,6 +504,13 @@ def review_detail(request,
     # get these when we first encounter one not in the above maps.
     has_inactive_file_attachments = False
     has_inactive_screenshots = False
+
+    issues = {
+        'total': 0,
+        'open': 0,
+        'resolved': 0,
+        'dropped': 0
+    }
 
     # Get all the comments and attach them to the reviews.
     for model, key, ordering in (
@@ -530,7 +561,11 @@ def review_detail(request,
                 if (comment.screenshot_id not in screenshot_id_map and
                     not has_inactive_screenshots):
                     inactive_screenshots = \
-                        review_request_details.get_inactive_screenshots()
+                        list(review_request_details.get_inactive_screenshots())
+
+                    for screenshot in inactive_screenshots:
+                        screenshot._comments = []
+
                     screenshot_id_map.update(
                         _build_id_map(inactive_screenshots))
                     has_inactive_screenshots = True
@@ -538,16 +573,16 @@ def review_detail(request,
                 if comment.screenshot_id in screenshot_id_map:
                     screenshot = screenshot_id_map[comment.screenshot_id]
                     comment.screenshot = screenshot
-
-                    if not hasattr(screenshot, '_comments'):
-                        screenshot._comments = []
-
                     screenshot._comments.append(comment)
             elif isinstance(comment, FileAttachmentComment):
                 if (comment.file_attachment_id not in file_attachment_id_map and
                     not has_inactive_file_attachments):
-                    inactive_file_attachments = \
-                        review_request_details.get_inactive_file_attachments()
+                    inactive_file_attachments = list(
+                        review_request_details.get_inactive_file_attachments())
+
+                    for file_attachment in inactive_file_attachments:
+                        file_attachment._comments = []
+
                     file_attachment_id_map.update(
                         _build_id_map(inactive_file_attachments))
                     has_inactive_file_attachments = True
@@ -556,10 +591,6 @@ def review_detail(request,
                     file_attachment = \
                         file_attachment_id_map[comment.file_attachment_id]
                     comment.file_attachment = file_attachment
-
-                    if not hasattr(file_attachment, '_comments'):
-                        file_attachment._comments = []
-
                     file_attachment._comments.append(comment)
 
             if parent_review.is_reply():
@@ -577,7 +608,13 @@ def review_detail(request,
                 # Add it to the list.
                 assert obj.review_id in reviews_entry_map
                 entry = reviews_entry_map[obj.review_id]
-                entry[key].append(comment)
+                entry['comments'][key].append(comment)
+
+                if comment.issue_opened:
+                    status_key = \
+                        comment.issue_status_to_string(comment.issue_status)
+                    issues[status_key] += 1
+                    issues['total'] += 1
 
 
     # Sort all the reviews and ChangeDescriptions into a single list, for
@@ -588,6 +625,7 @@ def review_detail(request,
         for name, info in changedesc.fields_changed.iteritems():
             info = copy.deepcopy(info)
             multiline = False
+            diff_revision = False
 
             if 'added' in info or 'removed' in info:
                 change_type = 'add_remove'
@@ -605,6 +643,10 @@ def review_detail(request,
                                 info[field][i] = (buginfo[0], full_bug_url)
                             except TypeError:
                                 logging.warning("Invalid bugtracker url format")
+                elif name == "diff" and "added" in info:
+                    # Sets the incremental revision number for a review
+                    # request change, provided it is an updated diff.
+                    diff_revision = diffset_versions[info['added'][0][2]]
 
             elif 'old' in info or 'new' in info:
                 change_type = 'changed'
@@ -639,6 +681,7 @@ def review_detail(request,
                 'multiline': multiline,
                 'info': info,
                 'type': change_type,
+                'diff_revision': diff_revision,
             })
 
         # Expand the latest review change
@@ -669,6 +712,7 @@ def review_detail(request,
         template_name,
         RequestContext(request, _make_review_request_context(review_request, {
             'draft': draft,
+            'detail_hooks': ReviewRequestDetailHook.hooks,
             'review_request_details': review_request_details,
             'entries': entries,
             'last_activity_time': last_activity_time,
@@ -677,6 +721,7 @@ def review_detail(request,
             'latest_changedesc': latest_changedesc,
             'close_description': close_description,
             'PRE_CREATION': PRE_CREATION,
+            'issues': issues,
             'has_diffs': (draft and draft.diffset) or len(diffsets) > 0,
             'file_attachments': file_attachments,
             'screenshots': screenshots,
@@ -804,7 +849,9 @@ def dashboard(request,
     else:
         grid = DashboardDataGrid(request, local_site=local_site)
 
-    return grid.render_to_response(template_name)
+    return grid.render_to_response(template_name, extra_context={
+        'sidebar_hooks': DashboardHook.hooks,
+    })
 
 
 @check_login_required
@@ -1133,6 +1180,7 @@ def preview_review_request_email(
     format,
     text_template_name='notifications/review_request_email.txt',
     html_template_name='notifications/review_request_email.html',
+    changedesc_id=None,
     local_site_name=None):
     """
     Previews the e-mail message that would be sent for an initial
@@ -1146,6 +1194,13 @@ def preview_review_request_email(
     if not review_request:
         return response
 
+    extra_context = {}
+
+    if changedesc_id:
+        changedesc = get_object_or_404(ChangeDescription, pk=changedesc_id)
+        extra_context['change_text'] = changedesc.text
+        extra_context['changes'] = changedesc.fields_changed
+
     siteconfig = SiteConfiguration.objects.get_current()
 
     if format == 'text':
@@ -1158,12 +1213,12 @@ def preview_review_request_email(
         raise Http404
 
     return HttpResponse(render_to_string(template_name,
-        RequestContext(request, {
+        RequestContext(request, dict({
             'review_request': review_request,
             'user': request.user,
             'domain': Site.objects.get_current().domain,
             'domain_method': siteconfig.get("site_domain_method"),
-        }),
+        }, **extra_context)),
     ), mimetype=mimetype)
 
 
@@ -1275,10 +1330,30 @@ def preview_reply_email(request, review_request_id, review_id, reply_id,
 
 
 @check_login_required
+def review_file_attachment(request,
+                           review_request_id,
+                           file_attachment_id,
+                           local_site_name=None):
+    """Displays a file attachment with a review UI."""
+    review_request, response = \
+        _find_review_request(request, review_request_id, local_site_name)
+
+    if not review_request:
+        return response
+
+    file_attachment = get_object_or_404(FileAttachment, pk=file_attachment_id)
+    review_ui = file_attachment.review_ui
+
+    if review_ui:
+        return review_ui.render_to_response(request)
+    else:
+        raise Http404
+
+
+@check_login_required
 def view_screenshot(request,
                     review_request_id,
                     screenshot_id,
-                    template_name='reviews/screenshot_detail.html',
                     local_site_name=None):
     """
     Displays a screenshot, along with any comments that were made on it.
@@ -1289,44 +1364,10 @@ def view_screenshot(request,
     if not review_request:
         return response
 
-    draft = review_request.get_draft(request.user)
-    review_request_details = draft or review_request
+    screenshot = get_object_or_404(Screenshot, pk=screenshot_id)
+    review_ui = LegacyScreenshotReviewUI(review_request, screenshot)
 
-    screenshots = list(review_request_details.get_screenshots())
-    screenshot = None
-
-    # We're going to try to find the screenshot being requested from the
-    # already fetched list, instead of having to query again.
-    for s in screenshots:
-        if s.pk == screenshot_id:
-            screenshot = s
-            break
-
-    if not screenshot:
-        # This wasn't a public screenshot. It may be inactive or on a draft.
-        screenshot = get_object_or_404(Screenshot, pk=screenshot_id)
-
-    review = review_request.get_pending_review(request.user)
-
-    if review_request.repository_id:
-        diffset_count = DiffSet.objects.filter(
-            history__pk=review_request.diffset_history_id).count()
-    else:
-        diffset_count = 0
-
-    return render_to_response(
-        template_name,
-        RequestContext(request, _make_review_request_context(review_request, {
-            'draft': draft,
-            'review_request_details': draft or review_request,
-            'review': review,
-            'details': draft or review_request,
-            'screenshot': screenshot,
-            'screenshots': screenshots,
-            'request': request,
-            'comments': screenshot.get_comments(),
-            'has_diffs': (draft and draft.diffset) or diffset_count > 0,
-        })))
+    return review_ui.render_to_response(request)
 
 
 @check_login_required
@@ -1386,7 +1427,6 @@ def search(request,
             lucene.StandardAnalyzer(lucene.Version.LUCENE_CURRENT))
         result_ids = [searcher.doc(hit.doc).get('id') \
                       for hit in searcher.search(parser.parse(query), 100).scoreDocs]
-
 
     searcher.close()
 

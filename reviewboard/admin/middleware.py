@@ -17,9 +17,22 @@ except ImportError:
         pass
 
 
+from reviewboard import initialize
 from reviewboard.admin.checks import check_updates_required
 from reviewboard.admin.siteconfig import load_site_config
 from reviewboard.admin.views import manual_updates_required
+
+
+class InitReviewBoardMiddleware(object):
+    """Handles the initialization of Review Board."""
+    def __init__(self, *args, **kwargs):
+        super(InitReviewBoardMiddleware, self).__init__(*args, **kwargs)
+        self._initialized = False
+
+    def process_request(self, request):
+        if not self._initialized:
+            initialize()
+            self._initialized = True
 
 
 class LoadSettingsMiddleware(object):
@@ -48,7 +61,7 @@ class CheckUpdatesRequiredMiddleware(object):
         updates_required = check_updates_required()
 
         if (updates_required and
-            not path_info.startswith(settings.MEDIA_URL)):
+            not path_info.startswith(settings.STATIC_URL)):
             return manual_updates_required(request, updates_required)
 
         # Let another handler handle this.

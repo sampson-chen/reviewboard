@@ -1,107 +1,164 @@
 {% load djblets_utils %}
 {% load i18n %}
 {% load reviewtags %}
+{% load staticfiles %}
 
 {% include "reviews/review_request_dlgs.html" %}
 
  <div class="header">
   {% star review_request %}
-  <div id="summary_wrapper"><label>{% trans "Summary" %}: </label><h1 id="summary" class="editable">{{review_request_details.summary|escape}}</h1></div>
+  <div id="summary_wrapper"><label>{% trans "Summary" %}: </label><h1 id="summary" class="editable required">{{review_request_details.summary|escape}}</h1></div>
   <p id="status">
   {% with review_request_details.time_added|date as dateadded and review_request_details.last_updated as lastupdated and review_request_details.last_updated|date:"c" as lastupdatedraw %}
   {% blocktrans with review_request.display_id as review_request_id and review_request.get_absolute_url as review_request_url %}
     Review Request <a href="{{review_request_url}}">#{{review_request_id}}</a> -
   {% endblocktrans %}
-  {% ifequal review_request.status 'S' %}
+  {% if review_request.status == 'S' %}
    {% blocktrans %}
    Created {{dateadded}} and submitted
    <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
-  {% endifequal %}
-  {% ifequal review_request.status 'D' %}
+  {% elif review_request.status == 'D' %}
    {% blocktrans %}
    Created {{dateadded}} and discarded
    <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
-  {% endifequal %}
-  {% ifequal review_request.status 'P' %}
+  {% elif review_request.status == 'P' %}
    {% blocktrans %}
    Created {{dateadded}} and updated
    <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
-  {% endifequal %}
+  {% endif %}
   {% endwith %}
   </p>
  </div>
- <table id="details">
-  <colgroup>
-   <col width="0%" />
-   <col width="50%" />
-  </colgroup>
-  <colgroup>
-   <col width="0%" />
-   <col width="50%" />
-  </colgroup>
-  <tr>
-    <td id="review-request-warning" colspan="4"></td>
-  </tr>
-  <tr>
-   <td class="label"><label for="submitter">{% trans "Submitter" %}:</label></td>
-   <td class="value"><a id="submitter" class="user" href="{% url user review_request.submitter %}">{{review_request.submitter|user_displayname}}</a></td>
-   <td class="caption" colspan="2">{% trans "Reviewers" %}</td>
-  </tr>
-  <tr>
-   <td class="label"><label for="branch">{% trans "Branch" %}:</label></td>
-   <td class="value" id="branch-value-cell"><span id="branch" class="editable">{{review_request_details.branch|safe}}</span></td>
-   <td class="indented label"><label for="target_groups">{% trans "Groups" %}:</label></td>
-   <td class="value" id="target-groups-value-cell"><span id="target_groups" class="editable">{% spaceless %}
-{%  for group in review_request_details.target_groups.all %}
-<a href="{% url group group %}">{{group}}</a>{%if not forloop.last %}, {%endif %}
-{%  endfor %}
-{% endspaceless %}</span></td>
-  </tr>
-  <tr>
-   <td class="label"><label for="bugs_closed">{% trans "Bugs" %}:</label></td>
-   <td class="value" id="bugs-closed-value-cell"><span id="bugs_closed" class="editable comma-editable">{% spaceless %}
+ <div id="details">
+  <div id="review-request-warning"></div>
+
+  <table class="details-column">
+   <colgroup>
+    <col width="0%" />
+    <col width="100%" />
+   </colgroup>
+   <tr>
+    <th class="label"><label for="submitter">{% trans "Submitter" %}:</label></th>
+    <td class="value"><a id="submitter" class="user" href="{% url user review_request.submitter %}">{{review_request.submitter|user_displayname}}</a></td>
+   </tr>
+   <tr>
+    <th class="label"><label for="branch">{% trans "Branch" %}:</label></th>
+    <td class="value" id="branch-value-cell"><span id="branch" class="editable">{{review_request_details.branch|safe}}</span></td>
+   </tr>
+   <tr>
+    <th class="label"><label for="bugs_closed">{% trans "Bugs" %}:</label></th>
+    <td class="value" id="bugs-closed-value-cell"><span id="bugs_closed" class="editable comma-editable">{% spaceless %}
 {%  for bug in review_request_details.get_bug_list %}
 {%   with bug|bug_url:review_request as bug_url %}
 {%    if bug_url %}<a href="{{bug_url}}">{{bug}}</a>{% else %}{{bug}}{% endif %}{% if not forloop.last %}, {% endif %}
 {%   endwith %}
 {%  endfor %}
 {% endspaceless %}</span></td>
-   <td class="indented label"><label for="target_people">{% trans "People" %}:</label></td>
-   <td class="value" id="target-people-value-cell"><span id="target_people" class="editable comma-editable">{% spaceless %}
+   </tr>
+
+{% if review_request.changenum %}
+   <tr>
+    <th class="label"><label for="changenum">{% trans "Change Number" %}:</label></th>
+    <td class="value"><span id="changenum">{{review_request.changenum}}{% if review_request.changeset_is_pending %} {% trans "(pending)" %} {% endif %}</span></td>
+   </tr>
+{% endif %}
+
+{% for hook in detail_hooks %}
+{%  if not forloop.counter0|divisibleby:2 %}
+   <tr>
+    <th class="label"><label for="{{hook.get_field_id}}">{{hook.get_label}}:</label></th>
+    <td class="value"><span id="{{hook.get_field_id}}">{{hook.get_detail}}</span></td>
+   </tr>
+{%  endif %}
+{% endfor %}
+  </table>
+
+  <table class="details-column">
+   <colgroup>
+    <col width="0%" />
+    <col width="100%" />
+   </colgroup>
+   <tr>
+    <th class="caption">
+     {% trans "Reviewers" %}
+    </th>
+    <td>
+{% if request.user == review_request.submitter or perms.reviews.can_edit_reviewrequest %}
+     <span class="required-flag">*</span>
+{% endif %}
+    </td>
+   </tr>
+   <tr class="indented">
+    <th class="label"><label for="target_groups">{% trans "Groups" %}:</label></th>
+    <td class="value" id="target-groups-value-cell"><span id="target_groups" class="editable">{% spaceless %}
+{%  for group in review_request_details.target_groups.all %}
+<a href="{% url group group %}">{{group}}</a>{%if not forloop.last %}, {%endif %}
+{%  endfor %}
+{% endspaceless %}</span></td>
+   </tr>
+   <tr class="indented">
+    <th class="label"><label for="target_people">{% trans "People" %}:</label></th>
+    <td class="value" id="target-people-value-cell"><span id="target_people" class="editable comma-editable">{% spaceless %}
 {%  for person in review_request_details.target_people.all %}
 <a href="{% url user person %}" class="user{% if not person.is_active %} inactive{% endif %}">{{person}}</a>{% if not forloop.last %}, {% endif %}
 {%  endfor %}
 {% endspaceless %}</span></td>
-  </tr>
+   </tr>
+
+{% if review_request.repository %}
+   <tr>
+    <th class="label"><label for="repository">{% trans "Repository" %}:</label></th>
+    <td class="value"><span id="repository">{{review_request.repository}}</span></td>
+   </tr>
+{% endif %}
+
+{% for hook in detail_hooks %}
+{%  if forloop.counter0|divisibleby:2 %}
+   <tr>
+    <th class="label"><label for="{{hook.get_field_id}}">{{hook.get_label}}:</label></th>
+    <td class="value"><span id="{{hook.get_field_id}}">{{hook.get_detail}}</span></td>
+   </tr>
+{%  endif %}
+{% endfor %}
+  </table>
+
+{% for hook in detail_hooks %}
+{%  if forloop.counter0|divisibleby:2 %}
   <tr>
-   <td class="label"><label for="changenum">{% trans "Change Number" %}:</label></td>
-   <td class="value"><span id="changenum">{{review_request.changenum}}{% if review_request.changeset_is_pending %} {% trans "(pending)" %} {% endif %}</span></td>
-   <td class="label"><label for="repository">{% trans "Repository" %}:</label></td>
-   <td class="value"><span id="repository">{{review_request.repository}}</span></td>
+{%  endif %}
+  <th class="label"><label for="{{hook.get_field_id}}">{{hook.get_label}}:</label></th>
+  <td class="value"><span id="{{hook.get_field_id}}">{{hook.get_detail}}</span></td>
+{%  if forloop.last or forloop.counter|divisibleby:2 %}
   </tr>
- </table>
+{%  endif %}
+{% endfor %}
+ </div>
+
  <div class="content" id="description-value-cell">
   <label for="description">{% trans "Description" %}:</label>
-  <pre id="description" class="editable">{{review_request_details.description|escape}}</pre>
+  <pre id="description" class="editable required">{{review_request_details.description|escape}}</pre>
  </div>
  <div class="content" id="testing-done-value-cell">
   <label for="testing_done">{% trans "Testing Done" %}:</label>
   <pre id="testing_done" class="editable">{{review_request_details.testing_done|escape}}</pre>
  </div>
+{% if request.user.pk == review_request.submitter_id or perms.reviews.can_edit_reviewrequest %}
+ <div class="content" id="required-field-legend"><span class="required-flag">*</span> {% trans "Required Field" %}</div>
+{% endif %}
  <div class="content clearfix"{% if not screenshots %} style="display: none;"{% endif %}>
   <label for="images">{% trans "Screenshots" %}:</label>
   <div id="screenshot-thumbnails">
 {% for image in screenshots %}
    <div class="screenshot-container" data-screenshot-id="{{image.id}}">
-    <div class="screenshot" onclick="javascript:window.location='{{image.get_absolute_url}}'; return false;"><a href="{{image.get_absolute_url}}">{{image.thumb}}</a></div>
+    <div class="image" onclick="javascript:window.location='{{image.get_absolute_url}}'; return false;"><a href="{{image.get_absolute_url}}">{{image.thumb}}</a></div>
     <div class="screenshot-caption">
      <a href="{{image.get_absolute_url}}" class="edit">{% if draft %}{{image.draft_caption|default:image.caption}}{% else %}{{image.caption}}{% endif %}</a>
-     {% ifuserorperm review_request.submitter_id "reviews.delete_screenshot" %}
-      <a href="#" class="delete"><img src="{{MEDIA_URL}}rb/images/delete.png?{{MEDIA_SERIAL}}" alt="{% trans "Delete Screenshot" %}" /></a>
-     {% endifuserorperm %}
+     {% if request.user.pk == review_request.submitter_id or perms.reviews.delete_screenshot %}
+      <a href="#" class="delete"><img src="{% static "rb/images/delete.png" %}" alt="{% trans "Delete Screenshot" %}" /></a>
+     {% endif %}
     </div>
    </div>
 {% endfor %}
@@ -115,18 +172,23 @@
    <div class="file-container" data-file-id="{{file.id}}">
     <div class="file">
      <ul class="actions">
+{% if file.review_ui %}
+      <li class="{% if file.review_ui.allow_inline %}file-review-inline %}{% else %}file-review{% endif %}"><a href="{% url file_attachment review_request.pk file.pk %}">{% trans "Review" %}</a></li>
+{% else %}
       <li class="file-add-comment"><a href="#">{% trans "Add Comment" %}</a></li>
+{% endif %}
      </ul>
      <div class="file-header">
       <a href="{{file.get_absolute_url}}">
       <img src="{{file.icon_url}}" />
       {{file.filename}}</a>
-{% ifuserorperm review_request.submitter_id "reviews.delete_file" %}
+{% if request.user.pk == review_request.submitter_id or perms.reviews.delete_file %}
       <a href="#" class="delete">
-       <img src="{{MEDIA_URL}}rb/images/delete.png?{{MEDIA_SERIAL}}" alt="{% trans "Delete File" %}" />
+       <img src="{% static "rb/images/delete.png" %}" alt="{% trans "Delete File" %}" />
       </a>
-{% endifuserorperm %}
+{% endif %}
      </div>
+     <div class="file-thumbnail-container">{{file.thumbnail}}</div>
      <div class="file-caption">
       <a href="{{file.get_absolute_url}}" class="edit">{% if draft %}{{file.draft_caption}}{% else %}{{file.caption}}{% endif %}</a>
      </div>
@@ -137,9 +199,11 @@
  </div>
 </div>
 
+{% include "reviews/review_issue_summary_table.html" %}
+
 <script type="text/javascript">
   $(document).ready(function() {
-    setFileAttachmentComments({
+    RB.setFileAttachmentComments({
 {% for file_attachment in file_attachments %}
         {{file_attachment.id}}: {% file_attachment_comments file_attachment %}{% if not forloop.last %},{% endif %}
 {% endfor %}

@@ -1,11 +1,10 @@
-from datetime import datetime
-
 from django.contrib.auth.models import User
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import ugettext_lazy as _
-
 from djblets.util.db import ConcurrencyManager
 from djblets.util.fields import CounterField
+from djblets.util.forms import TIMEZONE_CHOICES
 
 from reviewboard.reviews.models import Group, ReviewRequest
 from reviewboard.site.models import LocalSite
@@ -22,7 +21,7 @@ class ReviewRequestVisit(models.Model):
     """
     user = models.ForeignKey(User, related_name="review_request_visits")
     review_request = models.ForeignKey(ReviewRequest, related_name="visits")
-    timestamp = models.DateTimeField(_('last visited'), default=datetime.now)
+    timestamp = models.DateTimeField(_('last visited'), default=timezone.now)
 
     # Set this up with a ConcurrencyManager to help prevent race conditions.
     objects = ConcurrencyManager()
@@ -62,6 +61,10 @@ class Profile(models.Model):
         verbose_name=_("profile private"),
         help_text=_("Indicates whether the user wishes to keep his/her profile "
                     "private."))
+    open_an_issue = models.BooleanField(default=True,
+        verbose_name=_("opens an issue"),
+        help_text=_("Indicates whether the user wishes to default "
+                    "to opening an issue or not."))
 
     # Indicate whether submitted review requests should appear in the
     # review request lists (excluding the dashboard).
@@ -89,6 +92,11 @@ class Profile(models.Model):
     # user and review requests from entering the Incoming Reviews list.
     starred_groups = models.ManyToManyField(Group, blank=True,
                                             related_name="starred_by")
+
+    # Allows per-user timezone settings
+    timezone = models.CharField(choices=TIMEZONE_CHOICES, default='UTC',
+                                max_length=20)
+
 
     def star_review_request(self, review_request):
         """Marks a review request as starred.

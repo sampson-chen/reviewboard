@@ -8,7 +8,6 @@ from django.shortcuts import get_object_or_404, render_to_response
 from django.template import RequestContext
 from django.template.loader import render_to_string
 from django.utils.translation import ugettext as _
-
 from djblets.siteconfig.models import SiteConfiguration
 from djblets.util.misc import cache_memoize
 
@@ -21,8 +20,11 @@ from reviewboard.diffviewer.diffutils import UserVisibleError, \
 
 
 def build_diff_fragment(request, file, chunkindex, highlighting, collapseall,
-                        lines_of_context, context,
+                        lines_of_context, standalone=False, context=None,
                         template_name='diffviewer/diff_file_fragment.html'):
+    if not context:
+        context = {}
+
     cache = not lines_of_context
     key = ''
 
@@ -142,6 +144,7 @@ def build_diff_fragment(request, file, chunkindex, highlighting, collapseall,
         'collapseall': collapseall,
         'file': file,
         'lines_of_context': lines_of_context or (0, 0),
+        'standalone': standalone,
     })
 
     func = lambda: render_to_string(template_name,
@@ -251,15 +254,23 @@ def view_diff(request, diffset, interdiffset=None, extra_context={},
                 temp_files = get_diff_files(diffset, filediff, interdiffset)
 
             if temp_files:
-                populate_diff_chunks(temp_files, highlighting)
-
-                file_temp = temp_files[0]
-                file_temp['index'] = first_file['index']
-                first_file['fragment'] = \
-                    build_diff_fragment(request, file_temp, None,
-                                        highlighting, collapse_diffs, None,
-                                        context,
-                                        'diffviewer/diff_file_fragment.html')
+                try:
+                    populate_diff_chunks(temp_files, highlighting)
+                except Exception, e:
+                    file_temp = temp_files[0]
+                    file_temp['index'] = first_file['index']
+                    first_file['fragment'] = \
+                        exception_traceback(request, e,
+                                            'diffviewer/diff_fragment_error.html',
+                                            extra_context={'file': file_temp})
+                else:
+                    file_temp = temp_files[0]
+                    file_temp['index'] = first_file['index']
+                    first_file['fragment'] = build_diff_fragment(
+                        request, file_temp, None, highlighting,
+                        collapse_diffs, None,
+                        context=context,
+                        template_name='diffviewer/diff_file_fragment.html')
 
         response = render_to_response(template_name,
                                       RequestContext(request, context))
@@ -372,16 +383,16 @@ def view_diff_fragment(
         file = get_requested_diff_file()
 
         if file:
-            context = {
-                'standalone': chunkindex is not None,
-                'base_url': base_url,
-            }
-
-            return HttpResponse(build_diff_fragment(request, file,
-                                                    chunkindex,
-                                                    highlighting, collapseall,
-                                                    lines_of_context, context,
-                                                    template_name))
+            return HttpResponse(
+                build_diff_fragment(request, file,
+                                    chunkindex,
+                                    highlighting, collapseall,
+                                    lines_of_context,
+                                    chunkindex is not None,
+                                    context={
+                                        'base_url': base_url,
+                                    },
+                                    template_name=template_name))
 
         raise UserVisibleError(
             _(u"Internal error. Unable to locate file record for filediff %s") % \

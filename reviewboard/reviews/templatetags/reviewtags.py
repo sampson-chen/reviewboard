@@ -1,9 +1,9 @@
 import logging
 
 from django import template
-from django.conf import settings
 from django.db.models import Q
 from django.template import TemplateSyntaxError
+from django.template.defaultfilters import stringfilter
 from django.template.loader import render_to_string
 from django.utils import simplejson
 from django.utils.html import escape
@@ -176,12 +176,11 @@ def screenshotcommentcounts(context, screenshot):
                     'name': review.user.get_full_name() or review.user.username,
                 },
                 'url': comment.get_review_url(),
-                'localdraft' : review.user == user and \
-                               not review.public,
-                'x' : comment.x,
-                'y' : comment.y,
-                'w' : comment.w,
-                'h' : comment.h,
+                'localdraft': review.user == user and not review.public,
+                'x': comment.x,
+                'y': comment.y,
+                'w': comment.w,
+                'h': comment.h,
                 'review_id': review.id,
                 'review_request_id': review.review_request_id,
                 'issue_opened': comment.issue_opened,
@@ -330,7 +329,7 @@ def reply_section(context, entry, comment, context_type, context_id):
 
 
 @register.inclusion_tag('reviews/dashboard_entry.html', takes_context=True)
-def dashboard_entry(context, level, text, view, group_name=None):
+def dashboard_entry(context, level, text, view, param=None):
     """
     Renders an entry in the dashboard sidebar.
 
@@ -343,8 +342,11 @@ def dashboard_entry(context, level, text, view, group_name=None):
     starred = False
     show_count = True
     count = 0
+    url = None
+    group_name = None
 
     if view == 'to-group':
+        group_name = param
         count = datagrid.counts['groups'].get(group_name,
             datagrid.counts['starred_groups'].get(group_name, 0))
     elif view == 'watched-groups':
@@ -355,17 +357,19 @@ def dashboard_entry(context, level, text, view, group_name=None):
 
         if view == 'starred':
             starred = True
+    elif view == "url":
+        url = param
+        show_count = False
     else:
         raise template.TemplateSyntaxError, \
             "Invalid view type '%s' passed to 'dashboard_entry' tag." % view
 
     return {
-        'MEDIA_URL': settings.MEDIA_URL,
-        'MEDIA_SERIAL': settings.MEDIA_SERIAL,
         'level': level,
         'text': text,
         'view': view,
         'group_name': group_name,
+        'url': url,
         'count': count,
         'show_count': show_count,
         'user': user,
@@ -557,7 +561,6 @@ def render_star(user, obj):
         'starred': int(starred),
         'alt': image_alt,
         'user': user,
-        'MEDIA_URL': settings.MEDIA_URL,
     })
 
 
@@ -583,3 +586,10 @@ def comment_issue(context, review_request, comment, comment_type):
         'review': comment.get_review(),
         'interactive': interactive,
     }
+
+
+@register.filter
+@stringfilter
+def pretty_print_issue_status(status):
+    """Turns an issue status code into a human-readable status string."""
+    return BaseComment.issue_status_to_string(status)

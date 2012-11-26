@@ -15,6 +15,7 @@ from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import User
 from django.contrib.auth import get_backends
+from django.contrib.auth import hashers
 from django.utils.translation import ugettext as _
 from djblets.util.misc import get_object_or_none
 
@@ -104,11 +105,7 @@ class StandardAuthBackend(AuthBackend, ModelBackend):
         return ModelBackend.get_or_create_user(self, username)
 
     def update_password(self, user, password):
-        salt = sha1(str(time.time())).hexdigest()[:5]
-        hash = sha1(salt + password)
-        new_password = 'sha1$%s$%s' % (salt, hash.hexdigest())
-        user.password = new_password
-
+        user.password = hashers.make_password(password)
 
 class NISBackend(AuthBackend):
     """Authenticate against a user on an NIS server."""
@@ -178,6 +175,14 @@ class LDAPBackend(AuthBackend):
         username = username.strip()
         uid = settings.LDAP_UID_MASK % username
 
+        if len(password) == 0:
+            # Don't try to bind using an empty password; the server will
+            # return success, which doesn't mean we have authenticated.
+            # http://tools.ietf.org/html/rfc4513#section-5.1.2
+            # http://tools.ietf.org/html/rfc4513#section-6.3.1
+            logging.warning("Empty password for: %s" % uid)
+            return None
+
         try:
             import ldap
             ldapo = ldap.initialize(settings.LDAP_URI)
@@ -186,31 +191,31 @@ class LDAPBackend(AuthBackend):
             if settings.LDAP_TLS:
                 ldapo.start_tls_s()
 
-            # May need to log in as the anonymous user before searching.
             if settings.LDAP_ANON_BIND_UID:
+                # Log in as the anonymous user before searching.
                 ldapo.simple_bind_s(settings.LDAP_ANON_BIND_UID,
                                     settings.LDAP_ANON_BIND_PASSWD)
-
-            search = ldapo.search_s(settings.LDAP_BASE_DN, ldap.SCOPE_SUBTREE,
+                search = ldapo.search_s(settings.LDAP_BASE_DN, ldap.SCOPE_SUBTREE,
+                                        uid)
+                if not search:
+                    # No such a user, return early, no need for bind attempts
+                    logging.warning("LDAP error: The specified object does not "
+                                    "exist in the Directory: %s" %
                                     uid)
-            if not search:
-                # no such a user, return early, no need for bind attempts
-                logging.warning("LDAP error: The specified object does not "
-                                "exist in the Directory: %s" %
-                                uid)
-                return None
+                    return None
+                else:
+                    # Having found the user anonymously, attempt bind with the password
+                    ldapo.bind_s(search[0][0], password)
 
-            if len(password) == 0:
-                # Don't try to bind using an empty password; the server will
-                # return success, which doesn't mean we have authenticated.
-                # http://tools.ietf.org/html/rfc4513#section-5.1.2
-                # http://tools.ietf.org/html/rfc4513#section-6.3.1
-                logging.warning("Empty password for: %s" % uid)
-                return None
+            else :
+                # Attempt to bind using the given uid and password. It may be
+                # that we really need a setting for how the DN in this is
+                # constructed; this way is correct for my system
+                userbinding=','.join([uid,settings.LDAP_BASE_DN])
+                ldapo.bind_s(userbinding, password)
 
-            ldapo.bind_s(search[0][0], password)
+            return self.get_or_create_user(username, ldapo)
 
-            return self.get_or_create_user(username)
         except ImportError:
             pass
         except ldap.INVALID_CREDENTIALS:
@@ -220,7 +225,7 @@ class LDAPBackend(AuthBackend):
         except ldap.LDAPError, e:
             logging.warning("LDAP error: %s" % e)
         except:
-            # fallback exception catch because
+            # Fallback exception catch because
             # django.contrib.auth.authenticate() (our caller) catches only
             # TypeErrors
             logging.warning("An error while LDAP-authenticating: %r" %
@@ -228,7 +233,7 @@ class LDAPBackend(AuthBackend):
 
         return None
 
-    def get_or_create_user(self, username):
+    def get_or_create_user(self, username, ldapo):
         username = username.strip()
 
         try:
@@ -237,20 +242,10 @@ class LDAPBackend(AuthBackend):
         except User.DoesNotExist:
             try:
                 import ldap
-                ldapo = ldap.initialize(settings.LDAP_URI)
-                ldapo.set_option(ldap.OPT_REFERRALS, 0)
-                ldapo.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
-                if settings.LDAP_TLS:
-                    ldapo.start_tls_s()
-                if settings.LDAP_ANON_BIND_UID:
-                    ldapo.simple_bind_s(settings.LDAP_ANON_BIND_UID,
-                                        settings.LDAP_ANON_BIND_PASSWD)
-
-                passwd = ldapo.search_s(settings.LDAP_BASE_DN,
-                                        ldap.SCOPE_SUBTREE,
-                                        settings.LDAP_UID_MASK % username)
-
-                user_info = passwd[0][1]
+                search_result = ldapo.search_s(settings.LDAP_BASE_DN,
+                                               ldap.SCOPE_SUBTREE,
+                                               "(%s)" % settings.LDAP_UID_MASK % username)
+                user_info = search_result[0][1]
 
                 given_name_attr = getattr(settings, 'LDAP_GIVEN_NAME_ATTRIBUTE',
                                           'givenName')

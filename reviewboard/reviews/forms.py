@@ -15,6 +15,7 @@ from reviewboard.scmtools.errors import SCMError, ChangeNumberInUseError, \
                                         ChangeSetError
 from reviewboard.scmtools.models import Repository
 from reviewboard.site.validation import validate_review_groups, validate_users
+from reviewboard.ssh.errors import SSHError
 
 
 class DefaultReviewerForm(forms.ModelForm):
@@ -88,7 +89,7 @@ class NewReviewRequestForm(forms.Form):
     optionally a changelist number (for use in certain repository types
     such as Perforce).
     """
-    NO_REPOSITORY_ENTRY = _('(None - Graphics only)')
+    NO_REPOSITORY_ENTRY = _('(None - File attachments only)')
 
     basedir = forms.CharField(
         label=_("Base Directory"),
@@ -177,7 +178,7 @@ class NewReviewRequestForm(forms.Form):
 
         # It's a little odd to validate this here, but we want to have access to
         # the user.
-        if changenum:
+        if repository and changenum:
             try:
                 changeset = repository.get_scmtool().get_changeset(changenum)
             except ChangeSetError, e:
@@ -187,7 +188,7 @@ class NewReviewRequestForm(forms.Form):
                 # This scmtool doesn't have changesets
                 self.errors['changenum'] = forms.util.ErrorList(['Changesets are not supported.'])
                 raise ChangeSetError(None)
-            except SCMError, e:
+            except (SCMError, SSHError), e:
                 self.errors['changenum'] = forms.util.ErrorList([str(e)])
                 raise ChangeSetError(None)
 

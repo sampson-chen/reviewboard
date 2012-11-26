@@ -5,11 +5,14 @@ import urlparse
 
 from djblets.util.filesystem import is_exe_in_path
 
-from reviewboard.scmtools import sshutils
 from reviewboard.scmtools.core import SCMTool, HEAD, PRE_CREATION
-from reviewboard.scmtools.errors import SCMError, FileNotFoundError, \
+from reviewboard.scmtools.errors import AuthenticationError, \
+                                        SCMError, \
+                                        FileNotFoundError, \
                                         RepositoryNotFoundError
 from reviewboard.diffviewer.parser import DiffParser, DiffParserError
+from reviewboard.ssh import utils as sshutils
+from reviewboard.ssh.errors import SSHAuthenticationError, SSHError
 
 
 sshutils.register_rbssh('CVS_RSH')
@@ -18,6 +21,9 @@ sshutils.register_rbssh('CVS_RSH')
 class CVSTool(SCMTool):
     name = "CVS"
     supports_authentication = True
+    field_help_text = {
+        'path': 'The CVSROOT used to access the repository.',
+    }
     dependencies = {
         'executables': ['cvs'],
     }
@@ -47,15 +53,23 @@ class CVSTool(SCMTool):
 
         return self.client.cat_file(path, revision)
 
-    def parse_diff_revision(self, file_str, revision_str):
+    def parse_diff_revision(self, file_str, revision_str, *args, **kwargs):
         if revision_str == "PRE-CREATION":
             return file_str, PRE_CREATION
 
         m = self.rev_re.match(revision_str)
-        if not m:
-            raise SCMError("Unable to parse diff revision header '%s'" %
-                           revision_str)
-        return file_str, m.group(1)
+        if m:
+            return file_str, m.group(1)
+        else:
+            # Newer versions of CVS stick the file revision after the filename,
+            # separated by a colon. Check for that format too.
+            colon_idx = file_str.rfind(":")
+            if colon_idx == -1:
+                raise SCMError("Unable to parse diff revision header "
+                               "(file_str='%s', revision_str='%s')"
+                               % (file_str, revision_str))
+            return file_str[:colon_idx], file_str[colon_idx+1:]
+
 
     def get_diffs_use_absolute_paths(self):
         return True
@@ -120,15 +134,24 @@ class CVSTool(SCMTool):
         m = cls.ext_cvsroot_re.match(path)
 
         if m:
-            sshutils.check_host(m.group('hostname'), username, password,
-                                local_site_name)
+            try:
+                sshutils.check_host(m.group('hostname'), username, password,
+                                    local_site_name)
+            except SSHAuthenticationError, e:
+                # Represent an SSHAuthenticationError as a standard
+                # AuthenticationError.
+                raise AuthenticationError(e.allowed_types, unicode(e),
+                                          e.user_key)
+            except:
+                # Re-raise anything else
+                raise
 
         cvsroot, repopath = cls.build_cvsroot(path, username, password)
         client = CVSClient(cvsroot, repopath, local_site_name)
 
         try:
             client.cat_file('CVSROOT/modules', HEAD)
-        except (SCMError, FileNotFoundError):
+        except (SCMError, SSHError, FileNotFoundError):
             raise RepositoryNotFoundError()
 
     @classmethod

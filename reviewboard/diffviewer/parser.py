@@ -12,6 +12,7 @@ class File(object):
         self.data = None
         self.binary = False
         self.deleted = False
+        self.moved = False
 
 
 class DiffParserError(Exception):
@@ -197,4 +198,3 @@ class DiffParser(object):
         The returned diff as composed of all FileDiffs in the provided diffset.
         """
         return ''.join([filediff.diff for filediff in diffset.files.all()])
-

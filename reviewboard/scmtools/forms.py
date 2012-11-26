@@ -7,18 +7,19 @@ from django.contrib.admin.widgets import FilteredSelectMultiple
 from django.utils.translation import ugettext_lazy as _
 from djblets.util.filesystem import is_exe_in_path
 
+from reviewboard.admin.validation import validate_bug_tracker
 from reviewboard.hostingsvcs.errors import AuthorizationError
 from reviewboard.hostingsvcs.models import HostingServiceAccount
 from reviewboard.hostingsvcs.service import get_hosting_services, \
                                             get_hosting_service
-from reviewboard.scmtools import sshutils
 from reviewboard.scmtools.errors import AuthenticationError, \
-                                        BadHostKeyError, \
-                                        UnknownHostKeyError, \
                                         UnverifiedCertificateError
 from reviewboard.scmtools.models import Repository, Tool
 from reviewboard.site.models import LocalSite
 from reviewboard.site.validation import validate_review_groups, validate_users
+from reviewboard.ssh.client import SSHClient
+from reviewboard.ssh.errors import BadHostKeyError, \
+                                   UnknownHostKeyError
 
 
 class RepositoryForm(forms.ModelForm):
@@ -119,7 +120,10 @@ class RepositoryForm(forms.ModelForm):
         required=False,
         widget=forms.TextInput(attrs={'size': '60'}),
         help_text=_("The optional path to the bug tracker for this "
-                    "repository."))
+                    "repository. The path should resemble: "
+                    "http://www.example.com/issues?id=%s, where %s will be the "
+                    "bug number."),
+        validators=[validate_bug_tracker])
 
     def __init__(self, *args, **kwargs):
         self.local_site_name = kwargs.pop('local_site_name', None)
@@ -135,6 +139,7 @@ class RepositoryForm(forms.ModelForm):
         self.bug_tracker_forms = {}
         self.hosting_service_info = {}
         self.validate_repository = True
+        self.cert = None
 
         # Determine the local_site that will be associated with any
         # repository coming from this form.
@@ -238,8 +243,9 @@ class RepositoryForm(forms.ModelForm):
 
         # Get the current SSH public key that would be used for repositories,
         # if one has been created.
-        self.public_key = \
-            sshutils.get_public_key(sshutils.get_user_key(self.local_site_name))
+        self.ssh_client = SSHClient(namespace=self.local_site_name)
+        self.public_key = self.ssh_client.get_public_key(
+            self.ssh_client.get_user_key())
 
         if self.instance:
             self._populate_hosting_service_fields()
@@ -813,6 +819,9 @@ class RepositoryForm(forms.ModelForm):
             'bug_tracker_use_hosting': bug_tracker_use_hosting,
         }
 
+        if self.cert:
+            repository.extra_data['cert'] = self.cert
+
         hosting_type = self.cleaned_data['hosting_type']
 
         if hosting_type in self.repository_forms:
@@ -883,10 +892,9 @@ class RepositoryForm(forms.ModelForm):
             except BadHostKeyError, e:
                 if self.cleaned_data['trust_host']:
                     try:
-                        sshutils.replace_host_key(e.hostname,
-                                                  e.raw_expected_key,
-                                                  e.raw_key,
-                                                  self.local_site_name)
+                        self.ssh_client.replace_host_key(e.hostname,
+                                                         e.raw_expected_key,
+                                                         e.raw_key)
                     except IOError, e:
                         raise forms.ValidationError(e)
                 else:
@@ -895,8 +903,7 @@ class RepositoryForm(forms.ModelForm):
             except UnknownHostKeyError, e:
                 if self.cleaned_data['trust_host']:
                     try:
-                        sshutils.add_host_key(e.hostname, e.raw_key,
-                                              self.local_site_name)
+                        self.ssh_client.add_host_key(e.hostname, e.raw_key)
                     except IOError, e:
                         raise forms.ValidationError(e)
                 else:
@@ -905,8 +912,8 @@ class RepositoryForm(forms.ModelForm):
             except UnverifiedCertificateError, e:
                 if self.cleaned_data['trust_host']:
                     try:
-                        scmtool_class.accept_certificate(path,
-                                                         self.local_site_name)
+                        self.cert = scmtool_class.accept_certificate(
+                            path, self.local_site_name)
                     except IOError, e:
                         raise forms.ValidationError(e)
                 else:

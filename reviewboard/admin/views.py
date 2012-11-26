@@ -2,20 +2,23 @@ import logging
 
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
-from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render_to_response
 from django.template.context import RequestContext
 from django.template.loader import render_to_string
+from django.utils import simplejson
 from django.utils.translation import ugettext as _
+from djblets.siteconfig.models import SiteConfiguration
 from djblets.siteconfig.views import site_settings as djblets_site_settings
 
-from reviewboard.admin.cache_stats import get_cache_stats, get_has_cache_stats
+from reviewboard.admin.cache_stats import get_cache_stats
 from reviewboard.admin.forms import SSHSettingsForm
-from reviewboard.reviews.models import Group, DefaultReviewer
-from reviewboard.scmtools.models import Repository
-from reviewboard.scmtools import sshutils
+from reviewboard.admin.widgets import dynamic_activity_data, \
+                                      primary_widgets, \
+                                      secondary_widgets
+from reviewboard.ssh.client import SSHClient
+from reviewboard.ssh.utils import humanize_key
 
 
 @staff_member_required
@@ -25,13 +28,10 @@ def dashboard(request, template_name="admin/dashboard.html"):
     useful administration tasks.
     """
     return render_to_response(template_name, RequestContext(request, {
-        'user_count': User.objects.count(),
-        'reviewgroup_count': Group.objects.count(),
-        'defaultreviewer_count': DefaultReviewer.objects.count(),
-        'repository_count': Repository.objects.accessible(request.user).count(),
-        'has_cache_stats': get_has_cache_stats(),
-        'title': _("Dashboard"),
-        'root_path': settings.SITE_ROOT + "admin/db/"
+        'title': _("Admin Dashboard"),
+        'root_path': settings.SITE_ROOT + "admin/db/",
+        'primary_widgets': primary_widgets,
+        'secondary_widgets': secondary_widgets,
     }))
 
 
@@ -45,7 +45,7 @@ def cache_stats(request, template_name="admin/cache_stats.html"):
 
     return render_to_response(template_name, RequestContext(request, {
         'cache_hosts': cache_stats,
-        'cache_backend': cache.__module__,
+        'cache_backend': settings.CACHES['default']['BACKEND'],
         'title': _("Server Cache"),
         'root_path': settings.SITE_ROOT + "admin/db/"
     }))
@@ -61,7 +61,8 @@ def site_settings(request, form_class,
 
 @staff_member_required
 def ssh_settings(request, template_name='admin/ssh_settings.html'):
-    key = sshutils.get_user_key()
+    client = SSHClient()
+    key = client.get_user_key()
 
     if request.method == 'POST':
         form = SSHSettingsForm(request.POST, request.FILES)
@@ -77,7 +78,7 @@ def ssh_settings(request, template_name='admin/ssh_settings.html'):
         form = SSHSettingsForm()
 
     if key:
-        fingerprint = sshutils.humanize_key(key)
+        fingerprint = humanize_key(key)
     else:
         fingerprint = None
 
@@ -85,7 +86,7 @@ def ssh_settings(request, template_name='admin/ssh_settings.html'):
         'title': _('SSH Settings'),
         'key': key,
         'fingerprint': fingerprint,
-        'public_key': sshutils.get_public_key(key),
+        'public_key': client.get_public_key(key),
         'form': form,
     }))
 
@@ -101,3 +102,33 @@ def manual_updates_required(request, updates,
                                      RequestContext(request, extra_context))
                     for (template_name, extra_context) in updates],
     }))
+
+
+def widget_toggle(request):
+    """
+    Controls the state of widgets - collapsed or expanded.
+    Saves the state into site settings.
+    """
+    collapsed = request.GET.get('collapse', None)
+    widget = request.GET.get('widget', None)
+
+    if widget and collapsed:
+        siteconfig = SiteConfiguration.objects.get_current()
+        widget_settings = siteconfig.get("widget_settings", {})
+
+        widget_settings[widget] = collapsed
+        siteconfig.set("widget_settings", widget_settings)
+        siteconfig.save()
+
+    return HttpResponse("")
+
+
+def widget_activity(request):
+    """
+    Receives an AJAX request, sends the data to the widget controller and
+    returns JSON data
+    """
+    activity_data = dynamic_activity_data(request)
+
+    return HttpResponse(simplejson.dumps(activity_data),
+                        mimetype="application/json")

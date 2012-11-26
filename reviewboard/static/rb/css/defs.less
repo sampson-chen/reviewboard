@@ -1,0 +1,92 @@
+/* RB Colors */
+
+@light-yellow: #FFF47C;
+@dark-yellow: #A89C00;
+@light-grey: #EAEAEA;
+@grey: #D0D0D0;
+@light-blue: #C6DCF3;
+@dark-blue: #3465A4;
+
+@link-color: #0000C0;
+
+@headerbar-logo-padding-horiz: 6px;
+@headerbar-logo-width: 60px;
+@headerbar-padding-left: @headerbar-logo-width +
+                         2 * @headerbar-logo-padding-horiz;
+@headerbar-bg: #333333;
+@headerbar-bg-active: #555555;
+@headerbar-padding: 0.5em;
+@headerbar-menu-min-width: 9em;
+
+@navbar-bg: @light-blue;
+@navbar-border-color: @dark-blue;
+@navbar-text-color: #0000AA;
+
+@box-border-color: #888A85;
+@box-border-radius: 6px;
+@box-inner-border-radius: @box-border-radius - 1px;
+@box-title-bg: @light-blue;
+@box-shadow: 1px 1px 2px rgba(0, 0, 0, .15);
+@box-padding: 10px;
+
+@draft-bg-color: #CDFF9C;
+@draft-border-color: darken(@draft-bg-color, 50%);
+
+@review-request-actions-bg: @review-request-action-primary-bg;
+@review-request-actions-border-color:
+  darken(@review-request-action-primary-bg, 40%);
+
+@review-request-action-bg: #E5D7A8;
+@review-request-action-border-color: @review-request-actions-border-color;
+@review-request-action-active-bg: darken(@review-request-action-bg, 20%);
+@review-request-action-hover-bg: darken(@review-request-action-bg, 12%);
+
+@review-request-action-primary-bg: @review-request-action-bg;
+@review-request-action-primary-active-bg: @review-request-action-active-bg;
+@review-request-action-primary-hover-bg: @review-request-action-hover-bg;
+
+@review-request-action-menu-border-color: @review-request-actions-border-color;
+@review-request-action-menu-bg: @review-request-action-active-bg;
+@review-request-action-menu-item-hover-bg: @review-request-action-hover-bg;
+
+@review-request-warning-bg: #F5A9A9;
+@review-request-warning-border-color: #FF0000;
+
+@z-index-base: 1;
+@z-index-deco: 20;
+@z-index-event-overlay: 30;
+@z-index-filter-overlay: 40;
+@z-index-banner: 90;
+@z-index-dialog: 100;
+@z-index-diff-collapse-btn: 100;
+@z-index-menu: 110;
+@z-index-spinner: 120;
+@z-index-page-overlay: 130;
+
+.border-radius () {
+  -moz-border-radius: @arguments;
+  -webkit-border-radius: @arguments;
+  border-radius: @arguments;
+}
+
+.box-shadow () {
+  -moz-box-shadow: @arguments;
+  -webkit-box-shadow: @arguments;
+  box-shadow: @arguments;
+}
+
+.opacity (@value) {
+  opacity: @value / 100;
+  filter:alpha(opacity=@value);
+  -moz-opacity: @value / 100;
+}
+
+.pre-wrap () {
+  white-space: pre-wrap;      /* CSS 3 */
+  white-space: -moz-pre-wrap; /* Mozilla, 1999+ */
+  white-space: -pre-wrap;     /* Opera 4-6 */
+  white-space: -o-pre-wrap;   /* Opera 7 */
+  word-wrap: break-word;      /* IE 5.5+ */
+}
+
+// vim: set et ts=2 sw=2:

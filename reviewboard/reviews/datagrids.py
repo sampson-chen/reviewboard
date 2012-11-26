@@ -1,5 +1,8 @@
-from django.conf import settings
+import pytz
+import logging
+
 from django.contrib.auth.models import User
+from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.http import Http404
 from django.template.defaultfilters import date
 from django.utils.datastructures import SortedDict
@@ -21,7 +24,7 @@ class DateTimeSinceColumn(DateTimeColumn):
     number of minutes, hours, days, etc. ago is correct.
     """
     def render_data(self, obj):
-        return '<time class="timesince" datetime="%s">%s</time>' % (
+        return u'<time class="timesince" datetime="%s">%s</time>' % (
             date(getattr(obj, self.field_name), 'c'),
             super(DateTimeSinceColumn, self).render_data(obj))
 
@@ -33,8 +36,7 @@ class StarColumn(Column):
     """
     def __init__(self, *args, **kwargs):
         Column.__init__(self, *args, **kwargs)
-        self.image_url = "%srb/images/star_on.png?%s" % \
-            (settings.MEDIA_URL, settings.MEDIA_SERIAL)
+        self.image_url = static("rb/images/star_on.png")
         self.image_width = 16
         self.image_height = 15
         self.image_alt = _("Starred")
@@ -108,8 +110,7 @@ class ShipItColumn(Column):
     """
     def __init__(self, *args, **kwargs):
         Column.__init__(self, *args, **kwargs)
-        self.image_url = "%srb/images/shipit.png?%s" % \
-            (settings.MEDIA_URL, settings.MEDIA_SERIAL)
+        self.image_url = static("rb/images/shipit.png")
         self.image_width = 16
         self.image_height = 16
         self.image_alt = _("Ship It!")
@@ -120,11 +121,11 @@ class ShipItColumn(Column):
 
     def render_data(self, review_request):
         if review_request.shipit_count > 0:
-            return '<span class="shipit-count">' \
-                    '<img src="%srb/images/shipit_checkmark.png?%s" ' \
-                         'width="9" height="8" alt="%s" title="%s" /> %s' \
-                   '</span>' % \
-                (settings.MEDIA_URL, settings.MEDIA_SERIAL,
+            return u'<span class="shipit-count">' \
+                    u'<img src="%s" width="9" height="8" alt="%s" ' \
+                         u'title="%s" /> %s' \
+                   u'</span>' % \
+                (static("rb/images/shipit_checkmark.png"),
                  self.image_alt, self.image_alt, review_request.shipit_count)
 
         return ""
@@ -137,8 +138,7 @@ class MyCommentsColumn(Column):
     """
     def __init__(self, *args, **kwargs):
         Column.__init__(self, *args, **kwargs)
-        self.image_url = "%srb/images/comment-draft-small.png?%s" % \
-            (settings.MEDIA_URL, settings.MEDIA_SERIAL)
+        self.image_url = static("rb/images/comment-draft-small.png")
         self.image_width = 16
         self.image_height = 16
         self.image_alt = _("My Comments")
@@ -203,18 +203,37 @@ class MyCommentsColumn(Column):
             image_alt = _("Comments drafted")
         else:
             if review_request.mycomments_shipit_reviews > 0:
-                image_url = "%srb/images/comment-shipit-small.png?%s" % \
-                    (settings.MEDIA_URL, settings.MEDIA_SERIAL)
+                image_url = static("rb/images/comment-shipit-small.png")
                 image_alt = _("Comments published. Ship it!")
             else:
-                image_url = "%srb/images/comment-small.png?%s" % \
-                    (settings.MEDIA_URL, settings.MEDIA_SERIAL)
+                image_url = static("rb/images/comment-small.png")
                 image_alt = _("Comments published")
 
-        return '<img src="%s?%s" width="%s" height="%s" alt="%s" ' \
-               'title="%s" />' % \
-                (image_url, settings.MEDIA_SERIAL, self.image_width,
-                 self.image_height, image_alt, image_alt)
+        return u'<img src="%s" width="%s" height="%s" alt="%s" ' \
+               u'title="%s" />' % \
+                (image_url, self.image_width, self.image_height,
+                 image_alt, image_alt)
+
+
+class ToMeColumn(Column):
+    """
+    A column used to indicate whether the current logged-in user is targeted
+    by the review request.
+    """
+    def __init__(self, *args, **kwargs):
+        Column.__init__(self, *args, **kwargs)
+        self.label = u"\u00BB"  # this is &raquo;
+        self.detailed_label = u"\u00BB To Me"
+        self.shrink = True
+
+    def render_data(self, review_request):
+        user = self.datagrid.request.user
+        if (user.is_authenticated() and
+            review_request.target_people.filter(pk=user.pk).exists()):
+            return u'<div title="%s"><b>&raquo;</b></div>' % \
+                     (self.detailed_label)
+
+        return ""
 
 
 class NewUpdatesColumn(Column):
@@ -224,8 +243,7 @@ class NewUpdatesColumn(Column):
     """
     def __init__(self, *args, **kwargs):
         Column.__init__(self, *args, **kwargs)
-        self.image_url = "%srb/images/convo.png?%s" % \
-            (settings.MEDIA_URL, settings.MEDIA_SERIAL)
+        self.image_url = static("rb/images/convo.png")
         self.image_width = 18
         self.image_height = 16
         self.image_alt = "New Updates"
@@ -234,8 +252,8 @@ class NewUpdatesColumn(Column):
 
     def render_data(self, review_request):
         if review_request.new_review_count > 0:
-            return '<img src="%s" width="%s" height="%s" alt="%s" ' \
-                   'title="%s" />' % \
+            return u'<img src="%s" width="%s" height="%s" alt="%s" ' \
+                    u'title="%s" />' % \
                 (self.image_url, self.image_width, self.image_height,
                  self.image_alt, self.image_alt)
 
@@ -268,27 +286,32 @@ class SummaryColumn(Column):
 
     def render_data(self, review_request):
         summary = conditional_escape(review_request.summary)
+        labels = {}
+
         if not summary:
             summary = '&nbsp;<i>%s</i>' % _('No Summary')
 
         if review_request.submitter_id == self.datagrid.request.user.id:
+
             if review_request.draft_summary is not None:
                 summary = conditional_escape(review_request.draft_summary)
-                return self.__labeled_summary(_('Draft'), summary, 'label-draft')
-
-            if (not review_request.public and
-                review_request.status == ReviewRequest.PENDING_REVIEW):
-                return self.__labeled_summary(_('Draft'), summary, 'label-draft')
+                labels.update({_('Draft'):  'label-draft'})
+            elif (not review_request.public and
+                  review_request.status == ReviewRequest.PENDING_REVIEW):
+                labels.update({_('Draft'): 'label-draft'})
 
         if review_request.status == ReviewRequest.SUBMITTED:
-            return self.__labeled_summary(_('Submitted'), summary, 'label-submitted')
+            labels.update({_('Submitted'): 'label-submitted'})
         elif review_request.status == ReviewRequest.DISCARDED:
-            return self.__labeled_summary(_('Discarded'), summary, 'label-discarded')
+            labels.update({_('Discarded'): 'label-discarded'})
 
-        return summary
+        display_data = ''
 
-    def __labeled_summary(self, label, summary, label_class):
-        return u'<span class="%s">[%s]</span> %s' % (label_class, label, summary)
+        for label in labels:
+           display_data += u'<span class="%s">[%s] </span>' % (
+               labels[label], label)
+        display_data += u'%s' % summary
+        return display_data
 
 
 class SubmitterColumn(Column):
@@ -324,6 +347,7 @@ class PendingCountColumn(Column):
         return str(getattr(obj, self.field_name).filter(public=True,
                                                         status='P').count())
 
+
 class PeopleColumn(Column):
     def __init__(self, *args, **kwargs):
         Column.__init__(self, *args, **kwargs)
@@ -334,7 +358,7 @@ class PeopleColumn(Column):
 
     def render_data(self, review_request):
         people = review_request.target_people.all()
-        return reduce(lambda a,d: a+d.username+' ', people, '')
+        return reduce(lambda a, d: a + d.username + ' ', people, '')
 
 
 class GroupsColumn(Column):
@@ -347,7 +371,7 @@ class GroupsColumn(Column):
 
     def render_data(self, review_request):
         groups = review_request.target_groups.all()
-        return reduce(lambda a,d: a+d.name+' ', groups, '')
+        return reduce(lambda a, d: a + d.name + ' ', groups, '')
 
 
 class GroupMemberCountColumn(Column):
@@ -400,6 +424,74 @@ class ReviewCountColumn(Column):
         return "%s#last-review" % review_request.get_absolute_url()
 
 
+class DiffUpdatedColumn(DateTimeColumn):
+    """A column indicating the date and time the diff was last updated."""
+    def __init__(self, *args, **kwargs):
+        super(DiffUpdatedColumn, self).__init__(
+            _("Diff Updated"),
+            db_field="diffset_history__last_diff_updated",
+            field_name='last_diff_updated',
+            sortable=True,
+            link=False,
+            *args, **kwargs)
+
+    def augment_queryset(self, queryset):
+        return queryset.select_related('diffset_history')
+
+    def render_data(self, obj):
+        if obj.diffset_history.last_diff_updated:
+            return super(DiffUpdatedColumn, self).render_data(
+                obj.diffset_history)
+        else:
+            return ""
+
+
+class DiffUpdatedSinceColumn(DateTimeSinceColumn):
+    """A column indicating the elapsed time since the diff was last updated."""
+    def __init__(self, *args, **kwargs):
+        super(DiffUpdatedSinceColumn, self).__init__(
+            _("Diff Updated"),
+            db_field="diffset_history__last_diff_updated",
+            field_name='last_diff_updated',
+            sortable=True,
+            link=False,
+            *args, **kwargs)
+
+    def augment_queryset(self, queryset):
+        return queryset.select_related('diffset_history')
+
+    def render_data(self, obj):
+        if obj.diffset_history.last_diff_updated:
+            return DateTimeSinceColumn.render_data(self, obj.diffset_history)
+        else:
+            return ""
+
+
+class BugsColumn(Column):
+    def __init__(self, *args, **kwargs):
+        super(BugsColumn, self).__init__(_("Bugs"), link=False, shrink=True,
+                                         sortable=False, css_class="bugs",
+                                         *args, **kwargs)
+
+    def augment_queryset(self, queryset):
+        return queryset.select_related('repository')
+
+    def render_data(self, review_request):
+        bugs = review_request.get_bug_list()
+        repository = review_request.repository
+
+        if repository and repository.bug_tracker:
+            try:
+                return (", ").join(['<a href="%s">%s</a>' %
+                                    (repository.bug_tracker % bug, bug)
+                                    for bug in bugs])
+            except TypeError:
+                logging.warning('Invalid bug tracker format when rendering '
+                                'bugs column: %s' % repository.bug_tracker)
+
+        return (", ").join(bugs)
+
+
 class ReviewRequestDataGrid(DataGrid):
     """
     A datagrid that displays a list of review requests.
@@ -407,6 +499,7 @@ class ReviewRequestDataGrid(DataGrid):
     This datagrid accepts the show_submitted parameter in the URL, allowing
     submitted review requests to be filtered out or displayed.
     """
+    my_comments  = MyCommentsColumn()
     star         = ReviewRequestStarColumn()
     ship_it      = ShipItColumn()
     summary      = SummaryColumn(expand=True, link=True, css_class="summary")
@@ -414,8 +507,7 @@ class ReviewRequestDataGrid(DataGrid):
 
     branch       = Column(_("Branch"), db_field="branch",
                           shrink=True, sortable=True, link=False)
-    bugs_closed  = Column(_("Bugs"), db_field="bugs_closed",
-                          shrink=True, sortable=False, link=False)
+    bugs_closed  = BugsColumn()
     repository   = RepositoryColumn()
     time_added   = DateTimeColumn(_("Posted"),
         detailed_label=_("Posted Time"),
@@ -426,11 +518,9 @@ class ReviewRequestDataGrid(DataGrid):
         db_field="last_updated",
         field_name="last_updated",
         css_class=lambda r: ageid(r.last_updated))
-    diff_updated = DateTimeColumn(_("Diff Updated"),
+    diff_updated = DiffUpdatedColumn(
         format="F jS, Y, P", shrink=True,
-        field_name="last_updated",
-        css_class=lambda r: ageid(r.last_updated))
-
+        css_class=lambda r: ageid(r.diffset_history.last_diff_updated))
     time_added_since = DateTimeSinceColumn(_("Posted"),
         detailed_label=_("Posted Time (Relative)"),
         field_name="time_added", shrink=True,
@@ -440,15 +530,16 @@ class ReviewRequestDataGrid(DataGrid):
         db_field="last_updated",
         field_name="last_updated",
         css_class=lambda r: ageid(r.last_updated))
-    diff_updated_since = DateTimeSinceColumn(_("Diff Updated"),
+    diff_updated_since = DiffUpdatedSinceColumn(
         detailed_label=_("Diff Updated (Relative)"),
-        field_name="last_updated", shrink=True,
-        css_class=lambda r: ageid(r.last_updated))
+        shrink=True,
+        css_class=lambda r: ageid(r.diffset_history.last_diff_updated))
 
     review_count = ReviewCountColumn()
 
     target_groups = GroupsColumn()
     target_people = PeopleColumn()
+    to_me = ToMeColumn()
 
     review_id = Column(_("Review ID"),
                        shrink=True, sortable=True, link=True)
@@ -475,6 +566,14 @@ class ReviewRequestDataGrid(DataGrid):
         self.default_columns = [
             "star", "summary", "submitter", "time_added", "last_updated_since"
         ]
+
+        # Add local timezone info to the columns
+        user = self.request.user
+        if user.is_authenticated():
+            self.timezone = pytz.timezone(user.get_profile().timezone)
+            self.time_added.timezone = self.timezone
+            self.last_updated.timezone = self.timezone
+            self.diff_updated.timezone = self.timezone
 
     def load_extra_state(self, profile):
         if profile:
@@ -575,9 +674,13 @@ class DashboardDataGrid(ReviewRequestDataGrid):
                 # to-group is special because we want to make sure that the
                 # group exists and show a 404 if it doesn't. Otherwise, we'll
                 # show an empty datagrid with the name.
-                if not Group.objects.filter(name=group,
-                                            local_site=self.local_site).exists():
+                has_groups = Group.objects.filter(
+                    name=group,
+                    local_site=self.local_site).exists()
+
+                if not has_groups:
                     raise Http404
+
                 self.queryset = ReviewRequest.objects.to_group(
                     group, self.local_site, user)
                 self.title = _(u"Incoming Review Requests to %s") % group
@@ -719,7 +822,7 @@ def get_sidebar_counts(user, local_site):
         counts['groups'][group.name] = group.incoming_request_count
 
     for group in Group.objects.filter(
-            starred_by=user, local_site=local_site).order_by('name'):
+            starred_by=profile, local_site=local_site).order_by('name'):
         counts['starred_groups'][group.name] = group.incoming_request_count
 
     return counts

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import os
 
 from django.conf import settings
@@ -6,7 +6,7 @@ from django.contrib.auth.models import User, Permission
 from django.core import mail
 from django.core.files import File
 from django.db.models import Q
-from django.utils import simplejson
+from django.utils import simplejson, timezone
 from djblets.siteconfig.models import SiteConfiguration
 from djblets.testing.decorators import add_fixtures
 from djblets.testing.testcases import TestCase
@@ -23,18 +23,20 @@ from reviewboard.reviews.models import FileAttachmentComment, Group, \
                                        ReviewRequest, ReviewRequestDraft, \
                                        Review, Comment, Screenshot, \
                                        ScreenshotComment
-from reviewboard.scmtools import sshutils
 from reviewboard.scmtools.errors import AuthenticationError, \
-                                        BadHostKeyError, \
-                                        UnknownHostKeyError, \
                                         UnverifiedCertificateError
 from reviewboard.scmtools.models import Repository, Tool
 from reviewboard.scmtools.svn import SVNTool
 from reviewboard.site.urlresolvers import local_site_reverse
 from reviewboard.site.models import LocalSite
+from reviewboard.ssh.client import SSHClient
+from reviewboard.ssh.errors import BadHostKeyError, \
+                                   UnknownHostKeyError
 from reviewboard.webapi.errors import BAD_HOST_KEY, \
                                       DIFF_TOO_BIG, \
+                                      GROUP_ALREADY_EXISTS, \
                                       INVALID_REPOSITORY, \
+                                      INVALID_USER, \
                                       MISSING_USER_KEY, \
                                       REPO_AUTHENTICATION_ERROR, \
                                       UNVERIFIED_HOST_CERT, \
@@ -423,7 +425,8 @@ class BaseWebAPITestCase(TestCase, EmailTestHelper):
     def _postNewFileAttachmentComment(self, review_request, review_id,
                                       file_attachment, comment_text,
                                       issue_opened=None,
-                                      issue_status=None):
+                                      issue_status=None,
+                                      extra_fields={}):
         """Creates a file attachment comment and returns the payload response."""
         if review_request.local_site:
             local_site_name = review_request.local_site.name
@@ -434,6 +437,7 @@ class BaseWebAPITestCase(TestCase, EmailTestHelper):
             'file_attachment_id': file_attachment.id,
             'text': comment_text,
         }
+        post_data.update(extra_fields)
 
         if issue_opened is not None:
             post_data['issue_opened'] = issue_opened
@@ -496,8 +500,7 @@ class BaseWebAPITestCase(TestCase, EmailTestHelper):
         return rsp
 
     def _getTrophyFilename(self):
-        return os.path.join(settings.HTDOCS_ROOT,
-                            "media", "rb", "images", "trophy.png")
+        return os.path.join(settings.STATIC_ROOT, "rb", "images", "trophy.png")
 
 
 class ServerInfoResourceTests(BaseWebAPITestCase):
@@ -512,6 +515,13 @@ class ServerInfoResourceTests(BaseWebAPITestCase):
         self.assertTrue('info' in rsp)
         self.assertTrue('product' in rsp['info'])
         self.assertTrue('site' in rsp['info'])
+        self.assertTrue('capabilities' in rsp['info'])
+
+        caps = rsp['info']['capabilities']
+        self.assertTrue('diffs' in caps)
+
+        diffs_caps = caps.get('diffs')
+        self.assertTrue(diffs_caps.get('moved_files', False))
 
     @add_fixtures(['test_users', 'test_site'])
     def test_get_server_info_with_site(self):
@@ -594,16 +604,16 @@ class RepositoryResourceTests(BaseWebAPITestCase):
         # so we can restore them.
         self._old_check_repository = SVNTool.check_repository
         self._old_accept_certificate = SVNTool.accept_certificate
-        self._old_add_host_key = sshutils.add_host_key
-        self._old_replace_host_key = sshutils.replace_host_key
+        self._old_add_host_key = SSHClient.add_host_key
+        self._old_replace_host_key = SSHClient.replace_host_key
 
     def tearDown(self):
         super(RepositoryResourceTests, self).tearDown()
 
         SVNTool.check_repository = self._old_check_repository
         SVNTool.accept_certificate = self._old_accept_certificate
-        sshutils.add_host_key = self._old_add_host_key
-        sshutils.replace_host_key = self._old_replace_host_key
+        SSHClient.add_host_key = self._old_add_host_key
+        SSHClient.replace_host_key = self._old_replace_host_key
 
     def test_get_repositories(self):
         """Testing the GET repositories/ API"""
@@ -664,7 +674,7 @@ class RepositoryResourceTests(BaseWebAPITestCase):
         expected_key = key2
         saw = {'replace_host_key': False}
 
-        def _replace_host_key(_hostname, _expected_key, _key, local_site_name):
+        def _replace_host_key(cls, _hostname, _expected_key, _key):
             self.assertEqual(hostname, _hostname)
             self.assertEqual(expected_key, _expected_key)
             self.assertEqual(key, _key)
@@ -676,7 +686,7 @@ class RepositoryResourceTests(BaseWebAPITestCase):
                 raise BadHostKeyError(hostname, key, expected_key)
 
         SVNTool.check_repository = _check_repository
-        sshutils.replace_host_key = _replace_host_key
+        SSHClient.replace_host_key = _replace_host_key
 
         self._login_user(admin=True)
         self._post_repository(False, data={
@@ -711,7 +721,7 @@ class RepositoryResourceTests(BaseWebAPITestCase):
         key = key1
         saw = {'add_host_key': False}
 
-        def _add_host_key(_hostname, _key, local_site_name):
+        def _add_host_key(cls, _hostname, _key):
             self.assertEqual(hostname, _hostname)
             self.assertEqual(key, _key)
             saw['add_host_key'] = True
@@ -722,7 +732,7 @@ class RepositoryResourceTests(BaseWebAPITestCase):
                 raise UnknownHostKeyError(hostname, key)
 
         SVNTool.check_repository = _check_repository
-        sshutils.add_host_key = _add_host_key
+        SSHClient.add_host_key = _add_host_key
 
         self._login_user(admin=True)
         self._post_repository(False, data={
@@ -782,15 +792,22 @@ class RepositoryResourceTests(BaseWebAPITestCase):
         @classmethod
         def _accept_certificate(cls, path, local_site_name=None):
             saw['accept_certificate'] = True
+            return {
+                'fingerprint': '123',
+            }
 
         SVNTool.check_repository = _check_repository
         SVNTool.accept_certificate = _accept_certificate
 
         self._login_user(admin=True)
-        self._post_repository(False, data={
+        rsp = self._post_repository(False, data={
             'trust_host': 1,
         })
         self.assertTrue(saw['accept_certificate'])
+
+        repository = Repository.objects.get(pk=rsp['repository']['id'])
+        self.assertTrue('cert' in repository.extra_data)
+        self.assertEqual(repository.extra_data['cert']['fingerprint'], '123')
 
     def test_post_repository_with_missing_user_key(self):
         """Testing the POST repositories/ API with Missing User Key error"""
@@ -1083,6 +1100,166 @@ class ReviewGroupResourceTests(BaseWebAPITestCase):
     list_mimetype = _build_mimetype('review-groups')
     item_mimetype = _build_mimetype('review-group')
 
+    def test_post_group(self, local_site=None):
+        """Testing the POST groups/ API"""
+        name = 'my-group'
+        display_name = 'My Group'
+        mailing_list = 'mygroup@example.com'
+        visible = False
+        invite_only = True
+
+        self._login_user(admin=True)
+
+        rsp = self.apiPost(self.get_list_url(local_site), {
+            'name': name,
+            'display_name': display_name,
+            'mailing_list': mailing_list,
+            'visible': visible,
+            'invite_only': invite_only,
+        }, expected_mimetype=self.item_mimetype)
+
+        self.assertEqual(rsp['stat'], 'ok')
+
+        group = Group.objects.get(pk=rsp['group']['id'])
+        self.assertEqual(group.local_site, local_site)
+        self.assertEqual(group.name, name)
+        self.assertEqual(group.display_name, display_name)
+        self.assertEqual(group.mailing_list, mailing_list)
+        self.assertEqual(group.visible, visible)
+        self.assertEqual(group.invite_only, invite_only)
+
+    @add_fixtures(['test_site'])
+    def test_post_group_with_site(self):
+        """Testing the POST groups/ API with a local site"""
+        local_site = LocalSite.objects.get(name=self.local_site_name)
+        self.test_post_group(local_site)
+
+    def test_post_group_with_defaults(self):
+        """Testing the POST groups/ API with field defaults"""
+        name = 'my-group'
+        display_name = 'My Group'
+
+        self._login_user(admin=True)
+
+        rsp = self.apiPost(self.get_list_url(), {
+            'name': name,
+            'display_name': display_name,
+        }, expected_mimetype=self.item_mimetype)
+
+        self.assertEqual(rsp['stat'], 'ok')
+
+        group = Group.objects.get(pk=rsp['group']['id'])
+        self.assertEqual(group.mailing_list, '')
+        self.assertEqual(group.visible, True)
+        self.assertEqual(group.invite_only, False)
+
+    @add_fixtures(['test_site'])
+    def test_post_group_with_site_admin(self):
+        """Testing the POST groups/ API with a local site admin"""
+        self._login_user(local_site=True, admin=True)
+        local_site = LocalSite.objects.get(name=self.local_site_name)
+
+        rsp = self.apiPost(self.get_list_url(local_site), {
+            'name': 'mygroup',
+            'display_name': 'My Group',
+            'mailing_list': 'mygroup@example.com',
+        }, expected_mimetype=self.item_mimetype)
+
+        self.assertEqual(rsp['stat'], 'ok')
+
+    def test_post_group_with_no_access(self, local_site=None):
+        """Testing the POST groups/ API with no access"""
+        rsp = self.apiPost(self.get_list_url(local_site), {
+            'name': 'mygroup',
+            'display_name': 'My Group',
+            'mailing_list': 'mygroup@example.com',
+        }, expected_status=403)
+
+        self.assertEqual(rsp['stat'], 'fail')
+
+    @add_fixtures(['test_site'])
+    def test_post_group_with_site_no_access(self):
+        """Testing the POST groups/ API with local site and no access"""
+        local_site = LocalSite.objects.get(name=self.local_site_name)
+        self.test_post_group_with_no_access(local_site)
+
+    def test_post_group_with_conflict(self):
+        """Testing the POST groups/ API with Group Already Exists error"""
+        self._login_user(admin=True)
+        group = Group.objects.get(pk=1)
+
+        rsp = self.apiPost(self.get_list_url(), {
+            'name': group.name,
+            'display_name': 'My Group',
+        }, expected_status=409)
+
+        self.assertEqual(rsp['stat'], 'fail')
+        self.assertEqual(rsp['err']['code'], GROUP_ALREADY_EXISTS.code)
+
+    @add_fixtures(['test_site'])
+    def test_put_group(self, local_site=None):
+        """Testing the PUT groups/<name>/ API"""
+        name = 'my-group'
+        display_name = 'My Group'
+        mailing_list = 'mygroup@example.com'
+
+        group = Group.objects.get(pk=1)
+        group.local_site = local_site
+        group.save()
+
+        self._login_user(admin=True)
+        rsp = self.apiPut(self.get_item_url(group.name, local_site), {
+            'name': name,
+            'display_name': display_name,
+            'mailing_list': mailing_list,
+        }, expected_mimetype=self.item_mimetype)
+
+        self.assertEqual(rsp['stat'], 'ok')
+
+        group = Group.objects.get(pk=group.pk)
+        self.assertEqual(group.local_site, local_site)
+        self.assertEqual(group.name, name)
+        self.assertEqual(group.display_name, display_name)
+        self.assertEqual(group.mailing_list, mailing_list)
+
+    @add_fixtures(['test_site'])
+    def test_put_group_with_site(self):
+        """Testing the PUT groups/<name>/ API with local site"""
+        self.test_put_group(LocalSite.objects.get(name=self.local_site_name))
+
+    def test_put_group_with_no_access(self, local_site=None):
+        """Testing the PUT groups/<name>/ API with no access"""
+        group = Group.objects.get(pk=1)
+        group.local_site = local_site
+        group.save()
+
+        rsp = self.apiPut(self.get_item_url(group.name, local_site), {
+            'name': 'mygroup',
+            'display_name': 'My Group',
+            'mailing_list': 'mygroup@example.com',
+        }, expected_status=403)
+
+        self.assertEqual(rsp['stat'], 'fail')
+
+    @add_fixtures(['test_site'])
+    def test_put_group_with_site_no_access(self):
+        """Testing the PUT groups/<name>/ API with local site and no access"""
+        self.test_put_group_with_no_access(
+            LocalSite.objects.get(name=self.local_site_name))
+
+    def test_put_group_with_conflict(self):
+        """Testing the PUT groups/<name>/ API with Group Already Exists error"""
+        group = Group.objects.get(pk=1)
+        group2 = Group.objects.get(pk=2)
+
+        self._login_user(admin=True)
+        rsp = self.apiPut(self.get_item_url(group.name), {
+            'name': group2.name,
+        }, expected_status=409)
+
+        self.assertEqual(rsp['stat'], 'fail')
+        self.assertEqual(rsp['err']['code'], GROUP_ALREADY_EXISTS.code)
+
     @add_fixtures(['test_site'])
     def test_get_groups(self):
         """Testing the GET groups/ API"""
@@ -1231,6 +1408,139 @@ class ReviewGroupResourceTests(BaseWebAPITestCase):
                                   local_site_name=local_site_name,
                                   kwargs={
                                       'group_name': group_name,
+                                  })
+
+
+class ReviewGroupUserResourceTests(BaseWebAPITestCase):
+    """Testing the ReviewGroupUserResource API tests."""
+    fixtures = ['test_users', 'test_scmtools', 'test_reviewrequests']
+
+    list_mimetype = _build_mimetype('users')
+    item_mimetype = _build_mimetype('user')
+
+    def test_create_user(self, local_site=None):
+        """Testing the POST groups/<name>/users/ API"""
+        self._login_user(admin=True, local_site=local_site)
+
+        group = Group.objects.get(pk=1)
+        group.local_site = local_site
+        group.users = []
+        group.save()
+
+        user = User.objects.get(pk=1)
+
+        rsp = self.apiPost(self.get_list_url(group.name, local_site), {
+            'username': user.username,
+        }, expected_mimetype=self.item_mimetype)
+        self.assertEqual(rsp['stat'], 'ok')
+
+        self.assertEqual(group.users.count(), 1)
+        self.assertEqual(group.users.get().username, user.username)
+
+    @add_fixtures(['test_site'])
+    def test_create_user_with_site(self):
+        """Testing the POST groups/<name>/users/ API with local site"""
+        self.test_create_user(LocalSite.objects.get(name=self.local_site_name))
+
+    def test_create_user_with_no_access(self, local_site=None):
+        """Testing the POST groups/<name>/users/ API with Permission Denied"""
+        group = Group.objects.get(pk=1)
+        user = User.objects.get(pk=1)
+
+        rsp = self.apiPost(self.get_list_url(group.name, local_site), {
+            'username': user.username,
+        }, expected_status=403)
+        self.assertEqual(rsp['stat'], 'fail')
+
+    @add_fixtures(['test_site'])
+    def test_create_user_with_site_no_access(self):
+        """Testing the POST groups/<name>/users/ API with local site and Permission Denied"""
+        self.test_create_user_with_no_access(
+            LocalSite.objects.get(name=self.local_site_name))
+
+    def test_create_user_with_invalid_user(self):
+        """Testing the POST groups/<name>/users/ API with invalid user"""
+        self._login_user(admin=True)
+
+        group = Group.objects.get(pk=1)
+        group.users = []
+        group.save()
+
+        rsp = self.apiPost(self.get_list_url(group.name), {
+            'username': 'grabl',
+        }, expected_status=400)
+        self.assertEqual(rsp['stat'], 'fail')
+        self.assertEqual(rsp['err']['code'], INVALID_USER.code)
+
+        self.assertEqual(group.users.count(), 0)
+
+    def test_delete_user(self, local_site=None):
+        """Testing the DELETE groups/<name>/users/<username>/ API"""
+        self._login_user(admin=True, local_site=local_site)
+
+        group = Group.objects.get(pk=1)
+        group.local_site = local_site
+        group.save()
+
+        old_count = group.users.count()
+        user = group.users.all()[0]
+
+        self.apiDelete(
+            self.get_item_url(group.name, user.username, local_site),
+            expected_status=204)
+
+        self.assertEqual(group.users.count(), old_count - 1)
+
+    @add_fixtures(['test_site'])
+    def test_delete_user_with_site(self):
+        """Testing the DELETE groups/<name>/users/<username>/ API with local site"""
+        self.test_delete_user(LocalSite.objects.get(name=self.local_site_name))
+
+    def test_delete_user_with_no_access(self, local_site=None):
+        """Testing the DELETE groups/<name>/users/<username>/ API with Permission Denied"""
+        group = Group.objects.get(pk=1)
+        user = group.users.all()[0]
+
+        self.apiDelete(
+            self.get_item_url(group.name, user.username, local_site),
+            expected_status=403)
+
+    @add_fixtures(['test_site'])
+    def test_delete_user_with_site_no_access(self):
+        """Testing the DELETE groups/<name>/users/<username>/ API with local site and Permission Denied"""
+        self.test_delete_user_with_no_access(
+            LocalSite.objects.get(name=self.local_site_name))
+
+    def test_get_users(self, local_site=None):
+        """Testing the GET groups/<name>/users/ API"""
+        group = Group.objects.get(pk=1)
+        group.local_site = local_site
+        group.save()
+
+        rsp = self.apiGet(self.get_list_url(group.name, local_site),
+                          expected_mimetype=self.list_mimetype)
+        self.assertEqual(rsp['stat'], 'ok')
+        self.assertEqual(len(rsp['users']), group.users.count())
+
+    @add_fixtures(['test_site'])
+    def test_get_users_with_site(self):
+        """Testing the GET groups/<name>/users/ API with local site"""
+        self._login_user(local_site=True)
+        self.test_get_users(LocalSite.objects.get(name=self.local_site_name))
+
+    def get_list_url(self, group_name, local_site_name=None):
+        return local_site_reverse('users-resource',
+                                  kwargs={
+                                      'group_name': group_name,
+                                  },
+                                  local_site_name=local_site_name)
+
+    def get_item_url(self, group_name, username, local_site_name=None):
+        return local_site_reverse('user-resource',
+                                  local_site_name=local_site_name,
+                                  kwargs={
+                                      'group_name': group_name,
+                                      'username': username,
                                   })
 
 
@@ -2071,6 +2381,20 @@ class ReviewRequestResourceTests(BaseWebAPITestCase):
         # unit tests.
         return ReviewRequest.objects.get(pk=rsp['review_request']['id'])
 
+    def test_post_reviewrequests_with_no_repository(self):
+        """Testing the POST review-requests/ API with no repository"""
+        rsp = self.apiPost(self.get_list_url(),
+                           expected_mimetype=self.item_mimetype)
+        self.assertEqual(rsp['stat'], 'ok')
+
+        self.assertFalse('repository' in rsp['review_request']['links'])
+
+        # See if we can fetch this. Also return it for use in other
+        # unit tests.
+        review_request = ReviewRequest.objects.get(
+            pk=rsp['review_request']['id'])
+        self.assertEqual(review_request.repository, None)
+
     @add_fixtures(['test_site'])
     def test_post_reviewrequests_with_site(self):
         """Testing the POST review-requests/ API with a local site"""
@@ -2605,7 +2929,7 @@ class ReviewRequestDraftResourceTests(BaseWebAPITestCase):
         self.assertTrue(review_request.public)
 
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].subject, "Review Request: My Summary")
+        self.assertEqual(mail.outbox[0].subject, "Review Request 4: My Summary")
         self.assertValidRecipients(["doc", "grumpy"], [])
 
     def test_put_reviewrequestdraft_publish_with_new_review_request(self):
@@ -2634,7 +2958,7 @@ class ReviewRequestDraftResourceTests(BaseWebAPITestCase):
         self.assertTrue(review_request.public)
 
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].subject, "Review Request: My Summary")
+        self.assertEqual(mail.outbox[0].subject, "Review Request 10: My Summary")
         self.assertValidRecipients(["doc", "grumpy"], [])
 
     def test_delete_reviewrequestdraft(self):
@@ -2998,7 +3322,7 @@ class ReviewResourceTests(BaseWebAPITestCase):
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].subject,
-                         "Re: Review Request: Interdiff Revision Test")
+                         "Re: Review Request 8: Interdiff Revision Test")
         self.assertValidRecipients(["admin", "grumpy"], [])
 
     @add_fixtures(['test_site'])
@@ -4264,7 +4588,7 @@ class ChangeResourceTests(BaseWebAPITestCase):
 
         r = ReviewRequest.objects.get(pk=rsp['review_request']['id'])
 
-        now = datetime.now()
+        now = timezone.now()
         change1 = ChangeDescription(public=True,
                                     timestamp=now)
         change1.record_field_change('summary', 'foo', 'bar')
@@ -6173,6 +6497,81 @@ class FileAttachmentCommentResourceTests(BaseWebAPITestCase):
         rsp = self.apiGet(comments_url, expected_status=403)
         self.assertEqual(rsp['stat'], 'fail')
         self.assertEqual(rsp['err']['code'], PERMISSION_DENIED.code)
+
+    def test_post_file_attachment_comments_with_extra_fields(self):
+        """Testing the POST review-requests/<id>/file-attachments/<id>/comments/ API with extra fields"""
+        comment_text = "This is a test comment."
+        extra_fields = {
+            'extra_data.foo': '123',
+            'extra_data.bar': '456',
+            'extra_data.baz': '',
+            'ignored': 'foo',
+        }
+
+        rsp = self._postNewReviewRequest()
+        review_request = ReviewRequest.objects.get(
+            pk=rsp['review_request']['id'])
+
+        # Post the file_attachment.
+        rsp = self._postNewFileAttachment(review_request)
+        file_attachment = FileAttachment.objects.get(
+            pk=rsp['file_attachment']['id'])
+        self.assertTrue('links' in rsp['file_attachment'])
+        self.assertTrue('file_attachment_comments' in
+                        rsp['file_attachment']['links'])
+        comments_url = \
+            rsp['file_attachment']['links']['file_attachment_comments']['href']
+
+        # Make these public.
+        review_request.publish(self.user)
+
+        # Post the review.
+        rsp = self._postNewReview(review_request)
+        review = Review.objects.get(pk=rsp['review']['id'])
+
+        rsp = self._postNewFileAttachmentComment(review_request, review.id,
+                                                 file_attachment, comment_text,
+                                                 extra_fields=extra_fields)
+
+        comment = FileAttachmentComment.objects.get(
+            pk=rsp['file_attachment_comment']['id'])
+
+        self.assertTrue('foo' in comment.extra_data)
+        self.assertTrue('bar' in comment.extra_data)
+        self.assertFalse('baz' in comment.extra_data)
+        self.assertFalse('ignored' in comment.extra_data)
+        self.assertEqual(comment.extra_data['foo'],
+                         extra_fields['extra_data.foo'])
+        self.assertEqual(comment.extra_data['bar'],
+                         extra_fields['extra_data.bar'])
+
+        return rsp
+
+    def test_put_file_attachment_comments_with_extra_fields(self):
+        """Testing the PUT review-requests/<id>/file-attachments/<id>/comments/<id>/ API with extra fields"""
+        extra_fields = {
+            'extra_data.foo': 'abc',
+            'extra_data.bar': '',
+            'ignored': 'foo',
+        }
+
+        rsp = self.test_post_file_attachment_comments_with_extra_fields()
+
+        rsp = self.apiPut(
+            rsp['file_attachment_comment']['links']['self']['href'],
+            extra_fields,
+            expected_mimetype=self.item_mimetype)
+        self.assertEqual(rsp['stat'], 'ok')
+
+        comment = FileAttachmentComment.objects.get(
+            pk=rsp['file_attachment_comment']['id'])
+
+        self.assertTrue('foo' in comment.extra_data)
+        self.assertFalse('bar' in comment.extra_data)
+        self.assertFalse('ignored' in comment.extra_data)
+        self.assertEqual(len(comment.extra_data.keys()), 1)
+        self.assertEqual(comment.extra_data['foo'],
+                         extra_fields['extra_data.foo'])
 
 
 class DraftReviewFileAttachmentCommentResourceTests(BaseWebAPITestCase):

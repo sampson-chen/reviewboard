@@ -1,3 +1,4 @@
+from django.contrib.sites.models import Site
 from django.test import TestCase
 from django.utils import simplejson
 
@@ -196,10 +197,19 @@ class GitHubTests(ServiceTests):
     """Unit tests for the GitHub hosting service."""
     service_name = 'github'
 
+    def setUp(self):
+        super(GitHubTests, self).setUp()
+        self._old_format_public_key = self.service_class._format_public_key
+
+    def tearDown(self):
+        super(GitHubTests, self).tearDown()
+        self.service_class._format_public_key = self._old_format_public_key
+
     def test_service_support(self):
         """Testing the GitHub service support capabilities"""
         self.assertTrue(self.service_class.supports_bug_trackers)
         self.assertTrue(self.service_class.supports_repositories)
+        self.assertTrue(self.service_class.supports_ssh_key_association)
 
     def test_public_field_values(self):
         """Testing the GitHub public plan repository field values"""
@@ -310,6 +320,72 @@ class GitHubTests(ServiceTests):
                 'github_private_org_repo_name': 'myrepo',
             }),
             'http://github.com/myorg/myrepo/issues#issue/%s')
+
+    def test_is_ssh_key_associated(self):
+        """Testing that GitHub associated SSH keys are correctly identified"""
+        associated_key = 'good_key'
+        unassociated_key = 'bad_key'
+        keys = simplejson.dumps([
+            {'key': 'neutral_key'},
+            {'key': associated_key}
+        ])
+
+        def _http_get(self, *args, **kwargs):
+            return keys, None
+
+        self.service_class._http_get = _http_get
+        self.service_class._format_public_key = lambda self, key: key
+
+        account = self._get_hosting_account()
+        account.data['authorization'] = {'token': 'abc123'}
+        service = account.service
+
+        repository = Repository(hosting_account=account)
+        repository.extra_data = {
+            'repository_plan': 'public',
+            'github_public_repo_name': 'myrepo',
+        }
+
+        self.assertTrue(service.is_ssh_key_associated(repository,
+                                                      associated_key))
+        self.assertFalse(service.is_ssh_key_associated(repository,
+                                                       unassociated_key))
+        self.assertFalse(service.is_ssh_key_associated(repository, None))
+
+    def test_associate_ssh_key(self):
+        """Testing that GitHub SSH key association sends expected data"""
+        http_post_data = {}
+
+        def _http_post(self, *args, **kwargs):
+            http_post_data['args'] = args
+            http_post_data['kwargs'] = kwargs
+            return None, None
+
+        self.service_class._http_post = _http_post
+        self.service_class._format_public_key = lambda self, key: key
+
+        account = self._get_hosting_account()
+        account.data['authorization'] = {'token': 'abc123'}
+
+        repository = Repository(hosting_account=account)
+        repository.extra_data = {
+            'repository_plan': 'public',
+            'github_public_repo_name': 'myrepo',
+        }
+
+        service = account.service
+        service.associate_ssh_key(repository, 'mykey')
+        req_body = simplejson.loads(http_post_data['kwargs']['body'])
+        expected_title = ('Review Board (%s)'
+                          % Site.objects.get_current().domain)
+
+        self.assertEqual(http_post_data['args'][0],
+                         'https://api.github.com/repos/myuser/myrepo/keys?'
+                         'access_token=abc123')
+        self.assertEqual(http_post_data['kwargs']['content_type'],
+                         'application/json')
+        self.assertEqual(req_body['title'], expected_title)
+        self.assertEqual(req_body['key'], 'mykey')
 
     def test_authorization(self):
         """Testing that GitHub account authorization sends expected data"""

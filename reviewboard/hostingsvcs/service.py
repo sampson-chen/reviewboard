@@ -27,6 +27,7 @@ class HostingService(object):
     plans = None
     supports_bug_trackers = False
     supports_repositories = False
+    supports_ssh_key_association = False
 
     # These values are defaults that can be overridden in repository_plans
     # above.
@@ -50,6 +51,27 @@ class HostingService(object):
         considered authorized.
         """
         return False
+
+    def is_ssh_key_associated(self, repository, key):
+        """Returns whether or not the key is associated with the repository.
+
+        If the ``key`` (an instance of :py:mod:`paramiko.PKey`) is present
+        among the hosting service's deploy keys for a given ``repository`` or
+        account, then it is considered associated. If there is a problem
+        checking with the hosting service, an :py:exc:`SSHKeyAssociationError`
+        will be raised.
+        """
+        raise NotImplementedError
+
+    def associate_ssh_key(self, repository, key):
+        """Associates an SSH key with a given repository
+
+        The ``key`` (an instance of :py:mod:`paramiko.PKey`) will be added to
+        the hosting service's list of deploy keys (if possible). If there
+        is a problem uploading the key to the hosting service, a
+        :py:exc:`SSHKeyAssociationError` will be raised.
+        """
+        raise NotImplementedError
 
     def authorize(self, username, password, local_site_name=None,
                   *args, **kwargs):

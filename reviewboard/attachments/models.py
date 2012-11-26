@@ -1,11 +1,10 @@
 import os
 
-from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
 
-from reviewboard.attachments.mimetypes import MIMETYPE_ICON_ALIASES
+from reviewboard.attachments.mimetypes import MimetypeHandler
 
 
 class FileAttachment(models.Model):
@@ -23,6 +22,23 @@ class FileAttachment(models.Model):
     mimetype = models.CharField(_('mimetype'), max_length=256, blank=True)
 
     @property
+    def mimetype_handler(self):
+        return MimetypeHandler.for_type(self)
+
+    @property
+    def review_ui(self):
+        if not hasattr(self, '_review_ui'):
+            from reviewboard.reviews.ui.base import FileAttachmentReviewUI
+            self._review_ui = FileAttachmentReviewUI.for_type(self)
+
+        return self._review_ui
+
+    @property
+    def thumbnail(self):
+        """Returns the thumbnail for display."""
+        return self.mimetype_handler.get_thumbnail()
+
+    @property
     def filename(self):
         """Returns the filename for display purposes."""
         return os.path.basename(self.file.name)
@@ -30,25 +46,7 @@ class FileAttachment(models.Model):
     @property
     def icon_url(self):
         """Returns the icon URL for this file."""
-        if self.mimetype in MIMETYPE_ICON_ALIASES:
-            name = MIMETYPE_ICON_ALIASES[self.mimetype]
-        else:
-            category = self.mimetype.split('/')[0]
-            name = self.mimetype.replace('/', '-')
-
-            mimetypes_dir = os.path.join(settings.MEDIA_ROOT, 'rb', 'images',
-                                         'mimetypes')
-
-            if not os.path.exists(os.path.join(mimetypes_dir, name + '.png')):
-                name = category + '-x-generic'
-
-                if not os.path.exists(os.path.join(mimetypes_dir,
-                                                   name + '.png')):
-                    # We'll just use this as our fallback.
-                    name = 'text-x-generic'
-
-        return '%srb/images/mimetypes/%s.png?%s' % \
-            (settings.MEDIA_URL, name, settings.MEDIA_SERIAL)
+        return self.mimetype_handler.get_icon_url()
 
     def __unicode__(self):
         return self.caption

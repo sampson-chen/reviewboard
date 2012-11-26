@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from reviewboard import __version__, __version_info__, is_release
 
 
-PY_VERSIONS = ["2.4", "2.5", "2.6", "2.7"]
+PY_VERSIONS = ["2.5", "2.6", "2.7"]
 
 LATEST_PY_VERSION = PY_VERSIONS[-1]
 
@@ -99,6 +99,19 @@ def clone_git_tree(git_dir):
     execute('git clone %s .' % git_dir)
 
     return new_git_dir
+
+
+def build_settings():
+    f = open('settings_local.py', 'w')
+    f.write('DATABASES = {\n')
+    f.write('    "default": {\n')
+    f.write('        "ENGINE": "django.db.backends.sqlite3",\n')
+    f.write('        "NAME": "reviewboard.db",\n')
+    f.write('    }\n')
+    f.write('}\n\n')
+    f.write('PRODUCTION = True\n')
+    f.write('DEBUG = False\n')
+    f.close()
 
 
 def build_targets():
@@ -201,6 +214,7 @@ def main():
     cur_dir = os.getcwd()
     git_dir = clone_git_tree(cur_dir)
 
+    build_settings()
     build_targets()
     build_checksums()
     upload_files()

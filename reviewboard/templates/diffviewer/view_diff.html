@@ -3,7 +3,10 @@
 {% load djblets_deco %}
 {% load djblets_utils %}
 {% load i18n %}
+{% load rb_extensions %}
 {% load reviewtags %}
+{% load staticfiles %}
+{% load tz %}
 
 {% block title %}{{review_request_details.summary}} | {% trans "Diff Viewer" %}{% endblock %}
 
@@ -19,9 +22,8 @@
 {% endblock %}
 
 {% block css %}
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/diffviewer.css?{{MEDIA_SERIAL}}" />
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/reviews.css?{{MEDIA_SERIAL}}" />
-<link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}rb/css/syntax.css?{{MEDIA_SERIAL}}" />
+{{block.super}}
+
 {% if siteconfig.settings.diffviewer_show_trailing_whitespace|default_if_none:1 %}
 <style type="text/css">
   #diffs.ewhl table.sidebyside .ew { background: #ee3434; }
@@ -30,17 +32,17 @@
 {% endblock %}
 
 {% block scripts-post %}
-<script type="text/javascript" src="{{MEDIA_URL}}rb/js/diffviewer.js?{{MEDIA_SERIAL}}"></script>
-<script type="text/javascript" src="{{MEDIA_URL}}rb/js/reviews.js?{{MEDIA_SERIAL}}"></script>
-<script type="text/javascript" src="{{MEDIA_URL}}rb/js/jquery.form.js?{{MEDIA_SERIAL}}"></script>
+{{block.super}}
 
 {% if not specific_diff_requested %}
+{% localtime off %}
 <script type="text/javascript">
   $(document).ready(function() {
 	  /* Listen for updates to this review request. */
-	  registerForUpdates("{{last_activity_time|date:"Y-m-d H:i:s"}}", "diff");
+	  RB.registerForUpdates("{{last_activity_time|date:"c"}}", "diff");
   });
 </script>
+{% endlocaltime %}
 {% endif %}
 {% endblock %}
 
@@ -56,18 +58,22 @@
 {% include "reviews/review_header.html" %}
 
 {% box "review-request" %}
-<ul class="actions">
+<div class="actions-container">
+ <ul class="actions">
 {% include "reviews/review_request_actions_secondary.html" %}
+{% diffviewer_action_hooks %}
 {% if not interdiffset %}
- <li class="primary"><a href="raw/">{% trans "Download Diff" %}</a></li>
+  <li class="primary"><a href="raw/">{% trans "Download Diff" %}</a></li>
 {% endif %}
 {% include "reviews/review_request_actions_primary.html" %}
- <li class="primary"><a href="{{review_request.get_absolute_url}}">{% trans "View Reviews" %}</a></li>
-</ul>
+  <li class="primary"><a href="{{review_request.get_absolute_url}}">{% trans "View Reviews" %}</a></li>
+ </ul>
+</div>
+
 <div class="main">
 {% include "reviews/review_request_box.html" %}
 
-<div id="diff-details">
+<div id="diff-details" class="content">
 <a name="index_header"></a>
 {% with latest_diffset.revision as latest_revision %}
 {% with diffset.revision as revision %}
@@ -76,7 +82,7 @@
 {#   We're showing an interdiff, so indicate the revision range. #}
  <h1>{% blocktrans with interdiffset.revision as interdiff_revision %}Changes between revision {{revision}} and {{interdiff_revision}}{% endblocktrans %}</h1>
 {%  else %}
-{%   ifequal diffset.revision latest_revision %}
+{%   if diffset.revision == latest_revision %}
  <h1>{% blocktrans %}Diff revision {{revision}} (Latest){% endblocktrans %}</h1>
 {%   else %}
 {#    This is not the most recent diff. See if we're showing a draft. #}
@@ -99,7 +105,7 @@
 {%     endblocktrans %}
 {%    endif %}
  </p>
-{%   endifequal %}
+{%   endif %}
 {%  endif %}
 
 {#  Notify the user if they have unpublished comments in other diffs. #}
@@ -128,7 +134,7 @@
  {%  endbox %}
 {%  endif %}
 
-{%  ifnotequal num_diffs 1 %}
+{%  if num_diffs != 1 %}
 {#   Show a revision selector for jumping between revisions. #}
  <table class="revision-selector">
   <tr>
@@ -176,7 +182,7 @@
    </td>
   </tr>
  </table>
-{% endifnotequal %}
+{% endif %}
 
  <p><label>{% trans "Files Changed:" %}</label></p>
 {% include "diffviewer/changeindex.html" %}
@@ -186,16 +192,16 @@
 
 <ul class="controls">
 {% if collapseall %}
- <li><a href=".?expand=1"><img src="{{MEDIA_URL}}rb/images/expand.png?{{MEDIA_SERIAL}}" width="14" height="14" border="0" alt="" /> {% trans "Expand changes" %}</a></li>
+ <li><a href=".?expand=1"><img src="{% static "rb/images/expand.png" %}" width="14" height="14" border="0" alt="" /> {% trans "Expand changes" %}</a></li>
 {% else %}
- <li><a href=".?collapse=1"><img src="{{MEDIA_URL}}rb/images/collapse.png?{{MEDIA_SERIAL}}" width="14" height="14" border="0" alt="" /> {% trans "Collapse changes" %}</a></li>
+ <li><a href=".?collapse=1"><img src="{% static "rb/images/collapse.png" %}" width="14" height="14" border="0" alt="" /> {% trans "Collapse changes" %}</a></li>
 {% endif %}
 {% if siteconfig.settings.diffviewer_show_trailing_whitespace|default_if_none:1 %}
- <li class="ew" style="display:none;"><a href="#" class="toggleExtraWhitespaceButton"><img src="{{MEDIA_URL}}rb/images/collapse.png?{{MEDIA_SERIAL}}" width="14" height="14" border="0" alt="" /> {% trans "Hide Extra Whitespace" %}</a></li>
- <li  class="ew"><a href="#" class="toggleExtraWhitespaceButton"><img src="{{MEDIA_URL}}rb/images/expand.png?{{MEDIA_SERIAL}}" width="14" height="14" border="0" alt="" /> {% trans "Show Extra Whitespace" %}</a></li>
+ <li class="ew" style="display:none;"><a href="#" class="toggleExtraWhitespaceButton"><img src="{% static "rb/images/collapse.png" %}" width="14" height="14" border="0" alt="" /> {% trans "Hide Extra Whitespace" %}</a></li>
+ <li  class="ew"><a href="#" class="toggleExtraWhitespaceButton"><img src="{% static "rb/images/expand.png" %}" width="14" height="14" border="0" alt="" /> {% trans "Show Extra Whitespace" %}</a></li>
 {% endif %}
- <li class="ws"><a href="#" class="toggleWhitespaceButton"><img src="{{MEDIA_URL}}rb/images/collapse.png?{{MEDIA_SERIAL}}" width="14" height="14" border="0" alt="" /> {% trans "Hide Whitespace changes" %}</a></li>
- <li  class="ws" style="display:none;"><a href="#" class="toggleWhitespaceButton"><img src="{{MEDIA_URL}}rb/images/expand.png?{{MEDIA_SERIAL}}" width="14" height="14" border="0" alt="" /> {% trans "Show Whitespace changes" %}</a></li>
+ <li class="ws"><a href="#" class="toggleWhitespaceButton"><img src="{% static "rb/images/collapse.png" %}" width="14" height="14" border="0" alt="" /> {% trans "Hide Whitespace changes" %}</a></li>
+ <li  class="ws" style="display:none;"><a href="#" class="toggleWhitespaceButton"><img src="{% static "rb/images/expand.png" %}" width="14" height="14" border="0" alt="" /> {% trans "Show Whitespace changes" %}</a></li>
 </ul>
 {% endwith %}
 {% endwith %}
@@ -224,14 +230,14 @@
 {%  endif %}
 <script type="text/javascript">
   $(document).ready(function() {
-  loadFileDiff("{{base_url}}", "{{file.filediff.id}}", "{{file.filediff.diffset.revision}}",
+  RB.loadFileDiff("{{base_url}}", "{{file.filediff.id}}", "{{file.filediff.diffset.revision}}",
 {% if file.interfilediff %}
-               "{{file.interfilediff.id}}", "{{file.interfilediff.diffset.revision}}",
+                  "{{file.interfilediff.id}}", "{{file.interfilediff.diffset.revision}}",
 {% else %}
-               null, null,
+                  null, null,
 {% endif %}
-               "{{file.index}}",
-			   {% commentcounts file.filediff file.interfilediff %});
+                  "{{file.index}}",
+			      {% commentcounts file.filediff file.interfilediff %});
 });
 </script>
 {% endfor %}

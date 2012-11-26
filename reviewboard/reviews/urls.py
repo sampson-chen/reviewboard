@@ -35,12 +35,17 @@ urlpatterns = patterns('reviewboard.reviews.views',
      'comment_diff_fragments'),
 
     # Review request interdiffs
-    (r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)-(?P<interdiff_revision>[0-9]+)/$',
-     'diff'),
+    url(r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)-(?P<interdiff_revision>[0-9]+)/$',
+        'diff', name="view-interdiff"),
     (r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)-(?P<interdiff_revision>[0-9]+)/fragment/(?P<filediff_id>[0-9]+)/$',
      'diff_fragment'),
     (r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)-(?P<interdiff_revision>[0-9]+)/fragment/(?P<filediff_id>[0-9]+)/chunk/(?P<chunkindex>[0-9]+)/$',
      'diff_fragment'),
+
+    # File attachments
+    url(r'^(?P<review_request_id>[0-9]+)/file/(?P<file_attachment_id>[0-9]+)/$',
+        'review_file_attachment',
+        name='file_attachment'),
 
     # Screenshots
     url(r'^(?P<review_request_id>[0-9]+)/s/(?P<screenshot_id>[0-9]+)/$',
@@ -49,6 +54,8 @@ urlpatterns = patterns('reviewboard.reviews.views',
 
     # E-mail previews
     (r'^(?P<review_request_id>[0-9]+)/preview-email/(?P<format>(text|html))/$',
+     'preview_review_request_email'),
+    (r'^(?P<review_request_id>[0-9]+)/changes/(?P<changedesc_id>[0-9]+)/preview-email/(?P<format>(text|html))/$',
      'preview_review_request_email'),
     (r'^(?P<review_request_id>[0-9]+)/reviews/(?P<review_id>[0-9]+)/preview-email/(?P<format>(text|html))/$',
      'preview_review_email'),
