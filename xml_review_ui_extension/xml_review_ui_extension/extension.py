@@ -2,7 +2,7 @@
 from django.conf import settings
 from django.conf.urls.defaults import patterns, include
 from reviewboard.extensions.base import Extension
-from reviewboard.extensions.hooks import DashboardHook, URLHook
+from reviewboard.extensions.hooks import DashboardHook, URLHook, ReviewUIHook
 
 from XMLReviewUI import XMLReviewUI
 
