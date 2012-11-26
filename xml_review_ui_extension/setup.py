@@ -1,13 +1,13 @@
 from setuptools import setup
 
 
-PACKAGE = "XMLReviewUIExtension"
+PACKAGE = "xml_review_ui_extension"
 VERSION = "0.1"
 
 setup(
     name=PACKAGE,
     version=VERSION,
-    description="Review UI for XML file attachments",
+    description="Sample Extension to Register a Review UI",
     author="Sampson Chen",
     packages=["xml_review_ui_extension"],
     entry_points={

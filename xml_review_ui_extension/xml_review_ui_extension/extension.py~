@@ -4,8 +4,6 @@ from django.conf.urls.defaults import patterns, include
 from reviewboard.extensions.base import Extension
 from reviewboard.extensions.hooks import DashboardHook, URLHook
 
-from XMLReviewUI import XMLReviewUI
-
 class XMLReviewUIExtensionURLHook(URLHook):
     def __init__(self, extension, *args, **kwargs):
         pattern = patterns('', (r'^xml_review_ui_extension/',
