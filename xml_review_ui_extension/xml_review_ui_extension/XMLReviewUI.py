@@ -6,6 +6,7 @@ from reviewboard.reviews.ui.base import FileAttachmentReviewUI
 
 
 class XMLReviewUI(FileAttachmentReviewUI):
+    """ReviewUI for XML mimetypes"""
     supported_mimetypes = ['application/xml', 'text/xml']
     template_name = 'xml_review_ui_extension/xml.html'
     object_key = 'xml'
@@ -14,8 +15,5 @@ class XMLReviewUI(FileAttachmentReviewUI):
         f = self.obj.file
         f.open()
         code = f.read()
-
-        rendered = highlight(code, XmlLexer(), HtmlFormatter())
         f.close()
-
-        return rendered
+        return highlight(code, XmlLexer(), HtmlFormatter())
