@@ -57,7 +57,7 @@ class ReviewRequestDetailHook(ExtensionHook):
 
 
 class ReviewUIHook(ExtensionHook):
-    """A hook to allow extensions to integrate their Review UIs into RB"""
+    """A hook to allow integration of extension-defined Review UIs into RB"""
     __metaclass__ = ExtensionHookPoint
 
     def __init__(self, extension, review_uis):
@@ -69,7 +69,7 @@ class ReviewUIHook(ExtensionHook):
 
     def shutdown(self):
         super(ReviewUIHook, self).shutdown()
-        
+
         for review_ui in self.review_uis:
             unregister_ui(review_ui)
 
