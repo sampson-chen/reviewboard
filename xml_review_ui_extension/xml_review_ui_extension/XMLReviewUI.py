@@ -1,6 +1,7 @@
-from pygments import highlight
-from pygments.lexers import XmlLexer
-from pygments.formatters import HtmlFormatter
+import logging
+
+from django.utils.encoding import force_unicode
+import pygments
 
 from reviewboard.reviews.ui.base import FileAttachmentReviewUI
 
@@ -12,8 +13,18 @@ class XMLReviewUI(FileAttachmentReviewUI):
     object_key = 'xml'
 
     def render(self):
+        data_string = ""
         f = self.obj.file
-        f.open()
-        code = f.read()
+
+        try: 
+            f.open()
+            data_string = f.read()
+        except (ValueError, IOError), e:
+            logging.error('Failed to read from file %s: %s'
+                          % (self.obj.pk, e))
+
         f.close()
-        return highlight(code, XmlLexer(), HtmlFormatter())
+        return pygments.highlight(
+            force_unicde(data_string),
+            pygments.lexers.XmlLexer(),
+            pygments.formatters.HtmlFormatter())
