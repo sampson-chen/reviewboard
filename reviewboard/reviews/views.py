@@ -421,10 +421,11 @@ def review_detail(request,
     else:
         draft_timestamp = ""
 
-    etag = "%s:%s:%s:%s:%s:%s" % (request.user, last_activity_time,
-                                  draft_timestamp, review_timestamp,
-                                  int(starred),
-                                  settings.AJAX_SERIAL)
+    etag = "%s:%s:%s:%s:%s:%s:%s" % (
+        request.user, last_activity_time, draft_timestamp,
+        review_timestamp, review_request.last_review_activity_timestamp,
+        int(starred), settings.AJAX_SERIAL
+    )
 
     if etag_if_none_match(request, etag):
         return HttpResponseNotModified()
@@ -1072,9 +1073,9 @@ def raw_diff(request,
     resp = HttpResponse(data, mimetype='text/x-patch')
 
     if diffset.name == 'diff':
-        filename = "bug%s.patch" % review_request.bugs_closed.replace(',', '_')
+        filename = "rb%d.patch" % review_request.display_id
     else:
-        filename = diffset.name
+        filename = unicode(diffset.name).encode('ascii', 'ignore')
 
     resp['Content-Disposition'] = 'inline; filename=%s' % filename
     set_last_modified(resp, diffset.timestamp)
