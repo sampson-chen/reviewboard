@@ -25,6 +25,6 @@ class XMLReviewUI(FileAttachmentReviewUI):
 
         f.close()
         return pygments.highlight(
-            force_unicde(data_string),
+            force_unicode(data_string),
             pygments.lexers.XmlLexer(),
             pygments.formatters.HtmlFormatter())
