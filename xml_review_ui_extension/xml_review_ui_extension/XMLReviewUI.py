@@ -20,8 +20,7 @@ class XMLReviewUI(FileAttachmentReviewUI):
             f.open()
             data_string = f.read()
         except (ValueError, IOError), e:
-            logging.error('Failed to read from file %s: %s'
-                          % (self.obj.pk, e))
+            logging.error('Failed to read from file %s: %s' % (self.obj.pk, e))
 
         f.close()
         return pygments.highlight(
