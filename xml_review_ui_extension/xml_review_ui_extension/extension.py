@@ -33,7 +33,7 @@ class XMLReviewUIHook(ReviewUIHook):
 class XMLReviewUIExtension(Extension):
     is_configurable = True
     def __init__(self, *args, **kwargs):
-        super(XMLReviewUIExtension, self).__init__()
+        super(XMLReviewUIExtension, self).__init__(*args, **kwargs)
         self.url_hook = XMLReviewUIExtensionURLHook(self)
         self.dashboard_hook = XMLReviewUIExtensionDashboardHook(self)
         self.reviewui_hook = XMLReviewUIHook(self)
