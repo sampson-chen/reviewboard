@@ -12,7 +12,8 @@ setup(
     packages=["xml_review_ui_extension"],
     entry_points={
         'reviewboard.extensions':
-            '%s = xml_review_ui_extension.extension:XMLReviewUIExtension' % PACKAGE,
+            '%s = xml_review_ui_extension.extension:XMLReviewUIExtension'
+            % PACKAGE,
     },
     package_data={
         'xml_review_ui_extension': [

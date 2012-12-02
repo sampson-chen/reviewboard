@@ -1,15 +1,17 @@
 # xml_review_ui_extension Extension for Review Board.
 from django.conf import settings
 from django.conf.urls.defaults import patterns, include
+
 from reviewboard.extensions.base import Extension
 from reviewboard.extensions.hooks import DashboardHook, ReviewUIHook, URLHook
 
 from XMLReviewUI import XMLReviewUI
 
+
 class XMLReviewUIExtensionURLHook(URLHook):
     def __init__(self, extension, *args, **kwargs):
         pattern = patterns('', (r'^xml_review_ui_extension/',
-                            include('xml_review_ui_extension.urls')))
+                           include('xml_review_ui_extension.urls')))
         super(XMLReviewUIExtensionURLHook, self).__init__(extension, pattern)
 
 
@@ -19,8 +21,8 @@ class XMLReviewUIExtensionDashboardHook(DashboardHook):
             'label': 'XML Review UI Extension',
             'url': settings.SITE_ROOT + 'xml_review_ui_extension/',
         }]
-        super(XMLReviewUIExtensionDashboardHook, self).__init__(extension,
-                entries=entries, *args, **kwargs)
+        super(XMLReviewUIExtensionDashboardHook, self).__init__(
+            extension, entries=entries, *args, **kwargs)
 
 
 class XMLReviewUIHook(ReviewUIHook):

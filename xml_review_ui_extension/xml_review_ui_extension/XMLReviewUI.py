@@ -13,6 +13,7 @@ class XMLReviewUI(FileAttachmentReviewUI):
     object_key = 'xml'
 
     def render(self):
+        """Returns syntax-highlighted XML as HTML"""
         data_string = ""
         f = self.obj.file
 
@@ -23,6 +24,7 @@ class XMLReviewUI(FileAttachmentReviewUI):
             logging.error('Failed to read from file %s: %s' % (self.obj.pk, e))
 
         f.close()
+
         return pygments.highlight(
             force_unicode(data_string),
             pygments.lexers.XmlLexer(),
