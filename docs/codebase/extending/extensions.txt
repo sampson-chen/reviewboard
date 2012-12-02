@@ -505,7 +505,7 @@ to convert raw XML into syntax-highlighted HTML::
             data_string = ""
             f = self.obj.file
 
-            try: 
+            try:
                 f.open()
                 data_string = f.read()
             except (ValueError, IOError), e:
@@ -539,12 +539,12 @@ Here is the template that corresponds to the above Review UI:
     {{block.super}}
 
     <script language="javascript"
-    src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableModel.js?
-    {{MEDIA_SERIAL}}"></script>
+    src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableModel.js?">
+    </script>
 
     <script language="javascript"
-    src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableView.js?
-    {{MEDIA_SERIAL}}"></script>
+    src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableView.js?">
+    </script>
     
     <script language="javascript">
         $(document).ready(function() {
@@ -590,6 +590,7 @@ Here are the corresponding JavaScript used in the above template.
      */
     RB.XMLReviewableView = RB.AbstractReviewableView.extend({
         className: 'xml-review-ui',
+
         /*
          * Renders the view.
          */
