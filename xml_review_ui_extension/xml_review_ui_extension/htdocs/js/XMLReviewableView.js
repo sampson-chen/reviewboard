@@ -1,7 +1,7 @@
 /*
  * Displays a review UI for XML files.
  */
-RB.XMLReviewableView = RB.AbstractReviewableView.extend({
+RB.XMLReviewableView = RB.FileAttachmentReviewableView.extend({
     className: 'xml-review-ui',
 
     /*

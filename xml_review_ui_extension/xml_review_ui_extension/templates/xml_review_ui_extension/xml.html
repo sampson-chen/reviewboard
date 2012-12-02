@@ -7,13 +7,12 @@
 
 {% block scripts-post %}
 {{block.super}}
-<script language="javascript" src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableModel.js"></script>
 <script language="javascript" src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableView.js"></script>
 
 <script language="javascript">
     $(document).ready(function() {
         var view = new RB.XMLReviewableView({
-            model: new RB.XMLReviewable({
+            model: new RB.FileAttachmentReviewable({
                 attachmentID: '{{xml.id}}',
                 caption: '{{caption|escapejs}}',
                 rendered: '{{review_ui.render|escapejs}}'
