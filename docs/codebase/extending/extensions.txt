@@ -443,31 +443,18 @@ extensions.
 Subclassing ReviewUIHook
 ------------------------
 
-`extension.py` must define a hook to register its list of Review UIs. This hook
-must subclass :py:class:`reviewboard.extensions.hooks.ReviewUIHook`. The hook's
-constructor must pass the list of ReviewUIs to be registered to the constructor
-of its parent class.
-
-Example: **XMLReviewUIHook**::
-
-    class XMLReviewUIHook(ReviewUIHook):
-        """Hook responsible for registering XMLReviewUI"""
-        def __init__(self, extension, *args, **kwargs):
-            review_uis = [XMLReviewUI]
-            super(XMLReviewUIHook, self).__init__(extension, review_uis)
-
-After the hook is defined, add it as one of the Extension's instance
-variables and initialize it with the Extension instance as argument.::
+:file:`extension.py` must use a Review UI Hook to register its list of Review
+UIs.  This can be using :py:class:`reviewboard.extensions.hooks.ReviewUIHook`
+directly, using a subclass of it. :py:class:`ReviewUIHook` expects a list of
+Review UIs as argument in addition to the extension instance.
 
 Example: **XMLReviewUIExtension**::
 
     class XMLReviewUIExtension(Extension):
-        is_configurable = True
+
         def __init__(self, *args, **kwargs):
             super(XMLReviewUIExtension, self).__init__(*args, **kwargs)
-            self.url_hook = XMLReviewUIExtensionURLHook(self)
-            self.dashboard_hook = XMLReviewUIExtensionDashboardHook(self)
-            self.reviewui_hook = XMLReviewUIHook(self)
+            self.reviewui_hook = ReviewUIHook(self, [XMLReviewUI])
 
 
 .. _extension-review-ui-class:
@@ -499,6 +486,7 @@ Example: **XMLReviewUI**::
 
     from reviewboard.reviews.ui.base import FileAttachmentReviewUI
 
+
     class XMLReviewUI(FileAttachmentReviewUI):
         """ReviewUI for XML mimetypes"""
         supported_mimetypes = ['application/xml', 'text/xml']
@@ -511,17 +499,20 @@ function or what it returns, but it should be in agreement with logic specified
 in its corresponding template.
 
 Example: **render()** in **XMLReviewUI**. This simply uses the pygments API
-to convert raw XML into syntax-highlight HTML::
+to convert raw XML into syntax-highlighted HTML::
 
         def render(self):
             data_string = ""
             f = self.obj.file
+
             try: 
                 f.open()
                 data_string = f.read()
             except (ValueError, IOError), e:
                 logging.error('Failed to read from file %s: %s' % (self.obj.pk, e))
+                
             f.close()
+
             return pygments.highlight(
                 force_unicode(data_string),
                 pygments.lexers.XmlLexer(),
@@ -535,21 +526,26 @@ ReviewUI Template
 
 Here is the template that corresponds to the above Review UI:
 
-xml_review_ui_extension/templates/xml_review_ui_extension/**xml.html**::
+:file:`xml_review_ui_extension/templates/xml_review_ui_extension/xml.html`::
 
     {% extends base_template %}
     {% load i18n %}
     {% load reviewtags %}
+
     {% block title %}{{xml.filename}}{% if caption %}: {{caption}}
     {% endif %}{% endblock %}
+    
     {% block scripts-post %}
     {{block.super}}
+
     <script language="javascript"
     src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableModel.js?
     {{MEDIA_SERIAL}}"></script>
+
     <script language="javascript"
     src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableView.js?
     {{MEDIA_SERIAL}}"></script>
+    
     <script language="javascript">
         $(document).ready(function() {
             var view = new RB.XMLReviewableView({
@@ -564,6 +560,7 @@ xml_review_ui_extension/templates/xml_review_ui_extension/**xml.html**::
         });
     </script>
     {% endblock %}
+
     {% block review_ui_content %}
     <div id="xml-review-ui-container"></div>
     {% endblock %}
@@ -574,7 +571,7 @@ ReviewUI JavaScript
 
 Here are the corresponding JavaScript used in the above template.
 
-xml_review_ui_extension/htdocs/js/**XMLReviewableModel.js**::
+:file:`xml_review_ui_extension/htdocs/js/XMLReviewableModel.js`::
 
     /*
      * Provides review capabilities for XML files.
@@ -586,7 +583,7 @@ xml_review_ui_extension/htdocs/js/**XMLReviewableModel.js**::
         }, RB.AbstractReviewable.prototype.defaults)
     });
 
-xml_review_ui_extension/htdocs/js/**XMLReviewableView.**js**::
+:file:`xml_review_ui_extension/htdocs/js/XMLReviewableView.js`::
 
     /*
      * Displays a review UI for XML files.
