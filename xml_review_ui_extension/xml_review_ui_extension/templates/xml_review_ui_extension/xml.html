@@ -1,13 +1,14 @@
 {% extends base_template %}
 {% load i18n %}
 {% load reviewtags %}
+{% load staticfiles %}
 
 {% block title %}{{xml.filename}}{% if caption %}: {{caption}}{% endif %}{% endblock %}
 
 {% block scripts-post %}
 {{block.super}}
-<script language="javascript" src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableModel.js?{{MEDIA_SERIAL}}"></script>
-<script language="javascript" src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableView.js?{{MEDIA_SERIAL}}"></script>
+<script language="javascript" src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableModel.js"></script>
+<script language="javascript" src="{{MEDIA_URL}}ext/xml-review-ui-extension/js/XMLReviewableView.js"></script>
 
 <script language="javascript">
     $(document).ready(function() {
