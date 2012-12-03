@@ -59,7 +59,7 @@ class ReviewRequestDetailHook(ExtensionHook):
 
 
 class ReviewUIHook(ExtensionHook):
-    """This hook allows integration of Extension-defined Review UIs
+    """This hook allows integration of Extension-defined Review UIs.
     
     This accepts a list of Review UIs specified by the Extension and
     registers them when the hook is created. Likewise, it unregisters
