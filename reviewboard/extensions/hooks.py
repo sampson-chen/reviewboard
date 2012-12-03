@@ -2,6 +2,8 @@ from djblets.extensions.base import ExtensionHook, ExtensionHookPoint
 import djblets.extensions.hooks as djblets_hooks
 
 from reviewboard.reviews.ui.base import register_ui, unregister_ui
+from reviewboard.attachments.mimetypes import register_mimetype_handler, \
+                                              unregister_mimetype_handler
 
 
 class DashboardHook(ExtensionHook):
@@ -77,6 +79,39 @@ class ReviewUIHook(ExtensionHook):
 
         for review_ui in self.review_uis:
             unregister_ui(review_ui)
+
+
+class FileAttachmentThumbnailHook(ExtensionHook):
+    """This hook allows custom thumbnails to be defined for file attachments.
+
+    This accepts a list of MimetypeHandlers specified by the Extension
+    that are responsible for:
+
+       * 
+          Defining a list of file mimetypes it can handle in a class variable
+          called `supported_mimetypes`
+       * 
+          Defining how to generate a thumbnail of that mimetype by overriding
+          the instance function `def get_thumbnail`
+
+    These MimetypeHandlers are registered when the hook is created.  Likewise,
+    it unregisters the same list of MimetypeHandlers when the Extension is
+    disabled.
+    """
+    __metaclass__ = ExtensionHookPoint
+
+    def __init__(self, extension, mimetype_handlers):
+        super(FileAttachmentThumbnailHook, self).__init__(extension)
+        self.mimetype_handlers = mimetype_handlers
+
+        for mimetype_handler in self.mimetype_handlers:
+            register_mimetype_handler(mimetype_handler)
+
+    def shutdown(self):
+        super(FileAttachmentThumbnailHook, self).shutdown()
+
+        for mimetype_handler in self.mimetype_handlers:
+            unregister_mimetype_handler(mimetype_handler)
 
 
 class ActionHook(ExtensionHook):
