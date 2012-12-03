@@ -7,13 +7,13 @@ from reviewboard.reviews.ui.base import FileAttachmentReviewUI
 
 
 class XMLReviewUI(FileAttachmentReviewUI):
-    """ReviewUI for XML mimetypes"""
+    """This is a ReviewUI for XML mimetypes."""
     supported_mimetypes = ['application/xml', 'text/xml']
     template_name = 'xml_review_ui_extension/xml.html'
     object_key = 'xml'
 
     def render(self):
-        """Returns syntax-highlighted XML as HTML"""
+        """Returns syntax-highlighted XML as HTML."""
         data_string = ""
         f = self.obj.file
 
