@@ -84,15 +84,18 @@ class ReviewUIHook(ExtensionHook):
 class FileAttachmentThumbnailHook(ExtensionHook):
     """This hook allows custom thumbnails to be defined for file attachments.
 
-    This accepts a list of MimetypeHandlers specified by the Extension
-    that are responsible for:
+    This accepts a list of Mimetype Handlers specified by the Extension
+    that must:
 
+       *
+          Subclass
+          :py:class:`reviewboard.attachments.mimetypes.MimetypeHandler`
        * 
-          Defining a list of file mimetypes it can handle in a class variable
+          Define a list of file mimetypes it can handle in a class variable
           called `supported_mimetypes`
        * 
-          Defining how to generate a thumbnail of that mimetype by overriding
-          the instance function `def get_thumbnail`
+          Define how to generate a thumbnail of that mimetype by overriding
+          the instance function `def get_thumbnail(self):`
 
     These MimetypeHandlers are registered when the hook is created.  Likewise,
     it unregisters the same list of MimetypeHandlers when the Extension is
