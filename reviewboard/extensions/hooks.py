@@ -97,7 +97,7 @@ class FileAttachmentThumbnailHook(ExtensionHook):
           Define how to generate a thumbnail of that mimetype by overriding
           the instance function `def get_thumbnail(self):`
 
-    These MimetypeHandlers are registered when the hook is created.  Likewise,
+    These MimetypeHandlers are registered when the hook is created. Likewise,
     it unregisters the same list of MimetypeHandlers when the Extension is
     disabled.
     """
