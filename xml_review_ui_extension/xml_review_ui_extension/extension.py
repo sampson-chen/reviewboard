@@ -4,8 +4,8 @@ from reviewboard.extensions.hooks import ReviewUIHook, \
                                          FileAttachmentThumbnailHook, \
                                          URLHook
 
-from xml_review_ui import XMLReviewUI
 from mimetypes import XMLMimetype
+from xml_review_ui import XMLReviewUI
 
 
 class XMLReviewUIExtension(Extension):
