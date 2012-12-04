@@ -417,6 +417,61 @@ documentation.
 .. _`Django Admin Site`: https://docs.djangoproject.com/en/1.4/ref/contrib/admin/
 
 
+.. _extension-useful-hooks:
+
+Useful Hooks
+============
+
+ReviewBoard defines a number of useful hooks to help customize Extensions and
+their interaction with Reviewboard. We briefly examine a few, and demonstrate
+usage with sample code.
+
+
+.. _extension-url-hook:
+
+URLHook
+-------
+
+:py:class:`reviewboard.extensions.hooks.URLHook` is used to specify additional
+URLs used by the extension. :py:class:`URLHook` requires two arguments for
+initialization: the extension instance and the URL patterns. The URL patterns
+will be added when the extension is enabled, and removed once is the extension
+is disabled.
+
+Example usage in an extension:::
+
+    class SampleExtension(Extension):
+        def __init__(self, *args, **kwargs):
+            super(SampleExtension, self).__init__(*args, **kwargs)
+            pattern = patterns('', (r'^sample_extension/',
+                                    include('sample_extension.urls')))
+            self.url_hook = URLHook(self, pattern)
+
+Now suppose this Sample Extension has a Dashboard and must define an URL for
+it in :file:`urls.py`:::
+
+    from django.conf.urls.defaults import patterns, url
+
+
+    urlpatterns = patterns('sample_extension.views',
+        url(r'^$', 'dashboard'),
+        )
+
+
+.. _extension-url-hook:
+
+DashboardHook
+-------------
+
+:py:class:`reviewboard.extensions.hooks.DashboardHook` can be used to define
+Dashboard for your Extension. :py:class:`DashboardHook` requires two arguments
+for initialization: the extension instance and a list of entries. Each entry
+in this list must be a dictionary with the following keys:
+
+   * `label`: Label text to appear on the Dashboard
+   * `url`: URL to 
+
+
 .. _extension-review-ui-integration:
 
 Review UI Integration
