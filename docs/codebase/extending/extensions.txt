@@ -560,8 +560,6 @@ Example usage in an Extension::
 Review UI Integration
 =====================
 
-.. highlight:: python
-
 Review UIs are used in reviewing file attachments of particular mimetypes. For
 example, an Image Review UI is used to render image files and allow comments to
 be attached to specific areas of an image. Similarly, a Markdown Review UI
