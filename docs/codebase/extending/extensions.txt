@@ -417,26 +417,25 @@ documentation.
 .. _`Django Admin Site`: https://docs.djangoproject.com/en/1.4/ref/contrib/admin/
 
 
-.. _extension-useful-hooks:
-
 Useful Hooks
 ============
 
-ReviewBoard defines a number of useful hooks to help customize Extensions and
-their interaction with Reviewboard. We briefly examine a few, and demonstrate
-usage with sample code.
+Extensions can use "hooks" as a primary mechanism to customize Reviewboard's
+appearance and behavior.
 
+Hooks need only be instantiated for Review Board to "notice" them, and are
+automatically removed when the extension shuts down.
 
-.. _extension-url-hook:
+The following hooks are available for use by extensions.
 
 URLHook
 -------
 
-:py:class:`reviewboard.extensions.hooks.URLHook` is used to specify additional
-URLs used by the extension. :py:class:`URLHook` requires two arguments for
-initialization: the extension instance and the URL patterns. The URL patterns
-will be added when the extension is enabled, and removed once is the extension
-is disabled.
+:py:class:`reviewboard.extensions.hooks.URLHook` are used to extend the URL
+patterns that Review Board wil recognize and respond to.
+
+:py:class:`URLHook` requires two arguments for initialization: the extension
+instance and the URL patterns. 
 
 Example usage in an Extension::
 
@@ -447,15 +446,16 @@ Example usage in an Extension::
                                     include('sample_extension.urls')))
             self.url_hook = URLHook(self, pattern)
 
-Now suppose this Sample Extension has a Dashboard and must define an URL for
-it in :file:`urls.py`::
+Now suppose this SampleExtension has a dashboard and must define a URL for
+it in :file:`urls.py` (See :ref:`extension-dashboard-hook` for other aspects
+of an extension dashboard)::
 
     from django.conf.urls.defaults import patterns, url
 
 
     urlpatterns = patterns('sample_extension.views',
         url(r'^$', 'dashboard'),
-        )
+    )
 
 
 .. _extension-dashboard-hook:
@@ -464,14 +464,14 @@ DashboardHook
 -------------
 
 :py:class:`reviewboard.extensions.hooks.DashboardHook` can be used to define a
-custom Dashboard for your Extension. :py:class:`DashboardHook` requires two
-arguments for initialization: the extension instance and a list of entries.
+custom dashboard page for your Extension. :py:class:`DashboardHook` requires
+two arguments for initialization: the extension instance and a list of entries.
 Each entry in this list must be a dictionary with the following keys:
 
-   * **label**: Dashboard label to appear on the NavigationBar
-   * **url**: URL for the Dashboard
+   * **label**: Label to appear on the dashboard's navigation pane.
+   * **url**: URL for the dashboard page.
 
-If the Extension needs only one Dashboard, it then needs only one entry in
+If the extension needs only one dashboard, it then needs only one entry in
 this list. (See :ref:`extension-navigation-bar-hook`)
 
 Example usage in an Extension::
@@ -479,11 +479,16 @@ Example usage in an Extension::
     class SampleExtension(Extension):
         def __init__(self, *args, **kwargs):
             super(SampleExtension, self).__init__(*args, **kwargs)
-            entries = [{
-                'label': 'A SampleExtension Label',
-                'url': settings.SITE_ROOT + 'sample_extension/',
-            }]
-            self.dashboard_hook = DashboardHook(self, entries=entries)
+            entries = 
+            self.dashboard_hook = DashboardHook(
+                self,
+                entries = [
+                    {
+                        'label': 'A SampleExtension Label',
+                        'url': settings.SITE_ROOT + 'sample_extension/',
+                    }
+                ]
+            ) 
 
 Corresponding code in `views.py`::
 
@@ -497,16 +502,17 @@ Corresponding template `dashboard.html`::
     {% extends "base.html" %}
     {% load djblets_deco %}
     {% load i18n %}
+
     {% block title %}{% trans "sample_extension Dashboard" %}{% endblock %}
 
     {% block content %}
-    {% box "reports" %}
+    {%  box "reports" %}
      <h1 class="title">{% trans "sample_extension Dashboard" %}</h1>
 
      <div class="main">
-      <p>{% trans "To do..." %}</p>
+      <p>{% trans "This is my new Dashboard page for Review Board" %}</p>
      </div>
-    {% endbox %}
+    {%  endbox %}
     {% endblock %}
 
 
@@ -519,11 +525,12 @@ NavigationBarHook
 
 :py:class:`reviewboard.extensions.hooks.NavigationBarHook` can be used to
 introduce additional items to the main navigation bar.
+
 :py:class:`NavigationBarHook` requires two arguments: the extension instance
 and a list of entries. Each entry represents an item on the navigation bar,
 and is a dictionary with the following keys:
 
-    * **label**:    The label to display
+    * **label**:    The label to display.
     * **url**:      The URL to point to.
     * **url_name**: The name of the URL to point to.
 
@@ -538,21 +545,23 @@ Example usage in an Extension::
     class SampleExtension(Extension):
         def __init__(self, *args, **kwargs):
             super(SampleExtension, self).__init__(*args, **kwargs)
-            entries = [
-                {
-                    'label': 'An Item on Navigation Bar',
-                    'url': settings.SITE_ROOT + 'an_item_url_a/',
-                },
-                {
-                    'label': 'Another Item on Navigation Bar',
-                    'url': settings.SITE_ROOT + 'an_item_url_b/',
-                },
-                {
-                    'label': 'Yet Another Item on Navigation Bar',
-                    'url': settings.SITE_ROOT + 'an_item_url_c/',
-                },
-            ]
-            self.navigationbar_hook = NavigationBarHook(self, entries)
+            self.navigationbar_hook = NavigationBarHook(
+                self,
+                entries = [
+                    {
+                        'label': 'An Item on Navigation Bar',
+                        'url': settings.SITE_ROOT + 'an_item_url_a/',
+                    },
+                    {
+                        'label': 'Another Item on Navigation Bar',
+                        'url': settings.SITE_ROOT + 'an_item_url_b/',
+                    },
+                    {
+                        'label': 'Yet Another Item on Navigation Bar',
+                        'url': settings.SITE_ROOT + 'an_item_url_c/',
+                    },
+                ]
+            )
 
 
 .. _extension-review-ui-integration:
@@ -565,7 +574,7 @@ example, an Image Review UI is used to render image files and allow comments to
 be attached to specific areas of an image. Similarly, a Markdown Review UI
 renders the raw text from a .md file into a corresponding HTML.
 
-Extensions can integrate custom Review UIs into ReviewBoard by defining
+Extensions can integrate custom Review UIs into Review Board by defining
 a hook that subclasses ReviewUIHook. Each extension may define and register
 zero or more Review UIs. When the extension is enabled through the admin page,
 the hook registers its list of Review UIs. Likewise, the hook unregisters these
