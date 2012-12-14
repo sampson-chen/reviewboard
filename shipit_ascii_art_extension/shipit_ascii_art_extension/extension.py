@@ -31,4 +31,4 @@ class AsciiArt(Extension):
         self.signal_handlers = SignalHandlers(self)
         # This variable will be changed or refactored when
         # Ascii art is made configurable
-        self.ascii_pattern = "juggernaut_small"
+        self.ascii_pattern = "basic"
